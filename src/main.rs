@@ -20,6 +20,7 @@ pub struct CliOptions<'a> {
     qp: usize,
     min_keyint: u64,
     max_keyint: u64,
+    max_threads: Option<usize>,
 }
 
 impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
@@ -36,6 +37,9 @@ impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
             qp: matches.value_of("QP").unwrap().parse().unwrap(),
             min_keyint: matches.value_of("MIN_KEYINT").unwrap().parse().unwrap(),
             max_keyint: matches.value_of("MAX_KEYINT").unwrap().parse().unwrap(),
+            max_threads: matches
+                .value_of("MAX_THREADS")
+                .map(|threads| threads.parse().unwrap()),
         }
     }
 }
@@ -111,15 +115,22 @@ fn main() {
         .arg(
             Arg::with_name("PIPED_INPUT")
                 .help("Flags that the input is a command to pipe input from")
-                .long("pipe"),
+                .long("pipe")
+                .alias("piped"),
         )
         .arg(
             Arg::with_name("FAST_ANALYSIS")
                 .help("Specify an alternate piped command to use for the analysis pass")
-                .long("fast-analysis")
                 .long("fast-fp")
+                .alias("fast-analysis")
                 .takes_value(true)
                 .requires("PIPED_INPUT"),
+        )
+        .arg(
+            Arg::with_name("MAX_THREADS")
+                .help("Limit the maximum number of threads that can be used")
+                .long("threads")
+                .takes_value(true),
         )
         .get_matches();
     let opts = CliOptions::from(&matches);

@@ -11,8 +11,14 @@ description = "A tool to parallel encode GOP segments of a video with rav1e"
 [dependencies]
 av-scenechange = { version = "0.1", default-features = false }
 clap = "2"
+err-derive = "0.2"
 ivf = "0.1"
 num_cpus = "1"
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false }
+termion = "1"
 threadpool = "1"
 y4m = "0.4"
+
+[profile.release]
+codegen-units = 1
+lto = true

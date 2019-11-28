@@ -1,15 +1,23 @@
 use crate::decode::{Decoder, VideoDetails};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
+use err_derive::Error;
 use rav1e::prelude::*;
 use std::cmp;
 use std::error::Error;
 use std::fmt;
+use std::fs::remove_file;
+use std::fs::File;
+use std::io::stderr;
+use std::io::BufWriter;
+use std::io::Write;
 use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
+use termion::*;
 use threadpool::ThreadPool;
 
 pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<dyn Error>> {
@@ -64,8 +72,7 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
         }
     }
     thread_pool.join();
-
-    // TODO: Mux the IVF files together
+    mux_output_files(opts.output, keyframes.len())?;
 
     Ok(())
 }
@@ -108,10 +115,16 @@ fn encode_segment<T: Pixel, D: Decoder>(
     cfg.enc.quantizer = opts.qp;
     cfg.enc.tiles = 1;
     let out_filename = opts.output.to_string();
+    eprintln!(
+        "Segment {}: Starting ({} frames)...",
+        segment_idx,
+        frames.len()
+    );
     thread_pool.execute(move || {
         let mut output = create_muxer(&get_segment_output_filename(&out_filename, segment_idx))
             .expect("Failed to create segment output");
-        do_encode(cfg, video_info, &mut *output, frames).expect("Failed encoding segment");
+        do_encode(cfg, video_info, &mut *output, frames, segment_idx)
+            .expect("Failed encoding segment");
     });
     Ok(())
 }
@@ -123,11 +136,19 @@ fn get_segment_output_filename(output: &str, segment_idx: usize) -> String {
         .to_string()
 }
 
+fn get_segment_list_filename(output: &str) -> String {
+    Path::new(output)
+        .with_extension("segments.txt")
+        .to_string_lossy()
+        .to_string()
+}
+
 fn do_encode<T: Pixel>(
     cfg: Config,
     video_info: VideoDetails,
     output: &mut dyn Muxer,
     frames: Vec<Frame<T>>,
+    segment_idx: usize,
 ) -> Result<(), Box<dyn Error>> {
     let mut ctx: Context<T> = cfg.new_context()?;
     let mut progress = ProgressInfo::new(
@@ -146,8 +167,14 @@ fn do_encode<T: Pixel>(
     while let Some(frame_info) = process_frame(&mut ctx, output)? {
         for frame in frame_info {
             progress.add_frame(frame.clone());
-            // TODO: Fix multi-thread progress indicator
-            eprint!("\r{}                    ", progress);
+        }
+        if is_tty(&stderr()) {
+            eprint!(
+                "{}Segment {}: {}",
+                clear::CurrentLine,
+                segment_idx,
+                progress
+            );
         }
         output.flush().unwrap();
     }
@@ -295,4 +322,46 @@ impl<T: Pixel> From<Packet<T>> for FrameSummary {
             frame_type: packet.frame_type,
         }
     }
+}
+
+fn mux_output_files(out_filename: &str, num_segments: usize) -> Result<(), Box<dyn Error>> {
+    let segments = (1..=num_segments)
+        .map(|seg_idx| get_segment_output_filename(out_filename, seg_idx))
+        .collect::<Vec<_>>();
+    let segments_filename = get_segment_list_filename(out_filename);
+    {
+        let segments_file = File::create(&segments_filename)?;
+        let mut writer = BufWriter::new(&segments_file);
+        for segment in &segments {
+            writer.write_all(format!("file '{}'\n", segment).as_bytes())?;
+        }
+        segments_file.sync_all()?;
+    }
+
+    let result = Command::new("ffmpeg")
+        .arg("-f")
+        .arg("concat")
+        .arg("-safe")
+        .arg("0")
+        .arg("-i")
+        .arg(&segments_filename)
+        .arg("-c")
+        .arg("copy")
+        .arg(out_filename)
+        .status()?;
+    if !result.success() {
+        return Err(Box::new(EncodeError::CommandFailure("ffmpeg")));
+    }
+
+    let _ = remove_file(segments_filename);
+    for segment in segments {
+        let _ = remove_file(segment);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Error)]
+pub enum EncodeError {
+    #[error(display = "Command '{}' failed to complete", _0)]
+    CommandFailure(&'static str),
 }
