@@ -1,0 +1,117 @@
+mod analyze;
+mod decode;
+mod encode;
+
+use self::analyze::detect_keyframes;
+use self::encode::perform_encode;
+use clap::{App, Arg, ArgMatches};
+use std::error::Error;
+use std::fs::File;
+use std::io::Read;
+use std::process::{Command, Stdio};
+
+#[derive(Debug, Clone, Copy)]
+pub struct CliOptions<'a> {
+    input: Input<'a>,
+    output: &'a str,
+    speed: u8,
+    qp: u8,
+    min_keyint: usize,
+    max_keyint: usize,
+}
+
+impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
+    fn from(matches: &'a ArgMatches<'a>) -> Self {
+        CliOptions {
+            input: if matches.is_present("PIPED_INPUT") {
+                Input::Pipe(matches.value_of("INPUT").unwrap())
+            } else {
+                Input::File(matches.value_of("INPUT").unwrap())
+            },
+            output: matches.value_of("OUTPUT").unwrap(),
+            speed: matches.value_of("SPEED").unwrap().parse().unwrap(),
+            qp: matches.value_of("QP").unwrap().parse().unwrap(),
+            min_keyint: matches.value_of("MIN_KEYINT").unwrap().parse().unwrap(),
+            max_keyint: matches.value_of("MAX_KEYINT").unwrap().parse().unwrap(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Input<'a> {
+    File(&'a str),
+    Pipe(&'a str),
+}
+
+impl<'a> Input<'a> {
+    pub fn as_reader(self) -> Result<Box<dyn Read>, Box<dyn Error>> {
+        Ok(match self {
+            Input::File(filename) => Box::new(File::open(filename)?) as Box<dyn Read>,
+            Input::Pipe(command) => {
+                let pipe = Command::new(command.split(' ').next().unwrap())
+                    .args(&command.split(' ').skip(1).collect::<Vec<_>>())
+                    .stdout(Stdio::piped())
+                    .spawn()?;
+                Box::new(pipe.stdout.unwrap()) as Box<dyn Read>
+            }
+        })
+    }
+}
+
+fn main() {
+    let matches = App::new("rav1e-by-gop")
+        .arg(
+            Arg::with_name("INPUT")
+                .help("Sets the input file or command to use")
+                .required(true)
+                .index(1),
+        )
+        .arg(
+            Arg::with_name("OUTPUT")
+                .help("IVF video output")
+                .short("o")
+                .long("output")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("SPEED")
+                .help("rav1e speed level (0-10), smaller values are slower")
+                .default_value("6")
+                .short("s")
+                .long("speed")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("QP")
+                .help("Quantizer (0-255), smaller values are higher quality")
+                .default_value("100")
+                .short("q")
+                .long("quantizer")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("MIN_KEYINT")
+                .help("Minimum distance between two keyframes")
+                .default_value("12")
+                .short("i")
+                .long("min-keyint")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("MAX_KEYINT")
+                .help("Maximum distance between two keyframes")
+                .default_value("240")
+                .short("I")
+                .long("keyint")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("PIPED_INPUT")
+                .help("Flags that the input is a command to pipe input from")
+                .long("pipe"),
+        )
+        .get_matches();
+    let opts = CliOptions::from(&matches);
+    let keyframes = detect_keyframes(&opts).expect("Failed to run keyframe detection");
+    perform_encode(&keyframes, &opts);
+}

@@ -1,0 +1,16 @@
+[package]
+name = "rav1e-by-gop"
+version = "0.1.0"
+authors = ["Josh Holmer <jholmer.in@gmail.com>"]
+edition = "2018"
+license = "MIT"
+description = "A tool to parallel encode GOP segments of a video with rav1e"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+av-scenechange = { version = "0.1", default-features = false }
+clap = "2"
+crossbeam = "0.7"
+rav1e = { git = "https://github.com/xiph/rav1e", default-features = false }
+y4m = "0.4"
