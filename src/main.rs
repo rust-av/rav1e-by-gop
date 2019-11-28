@@ -1,6 +1,7 @@
 mod analyze;
 mod decode;
 mod encode;
+mod muxer;
 
 use self::analyze::detect_keyframes;
 use self::encode::perform_encode;
@@ -13,11 +14,12 @@ use std::process::{Command, Stdio};
 #[derive(Debug, Clone, Copy)]
 pub struct CliOptions<'a> {
     input: Input<'a>,
+    first_pass_input: Option<Input<'a>>,
     output: &'a str,
-    speed: u8,
-    qp: u8,
-    min_keyint: usize,
-    max_keyint: usize,
+    speed: usize,
+    qp: usize,
+    min_keyint: u64,
+    max_keyint: u64,
 }
 
 impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
@@ -28,6 +30,7 @@ impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
             } else {
                 Input::File(matches.value_of("INPUT").unwrap())
             },
+            first_pass_input: matches.value_of("FAST_ANALYSIS").map(Input::Pipe),
             output: matches.value_of("OUTPUT").unwrap(),
             speed: matches.value_of("SPEED").unwrap().parse().unwrap(),
             qp: matches.value_of("QP").unwrap().parse().unwrap(),
@@ -110,8 +113,23 @@ fn main() {
                 .help("Flags that the input is a command to pipe input from")
                 .long("pipe"),
         )
+        .arg(
+            Arg::with_name("FAST_ANALYSIS")
+                .help("Specify an alternate piped command to use for the analysis pass")
+                .long("fast-analysis")
+                .long("fast-fp")
+                .takes_value(true)
+                .requires("PIPED_INPUT"),
+        )
         .get_matches();
     let opts = CliOptions::from(&matches);
+    assert!(opts.output.ends_with(".ivf"), "Output must be a .ivf file");
+
+    eprintln!("Analyzing scene cuts...");
     let keyframes = detect_keyframes(&opts).expect("Failed to run keyframe detection");
-    perform_encode(&keyframes, &opts);
+    eprintln!("Finished analyzing scene cuts");
+
+    eprintln!("Starting encoding...");
+    perform_encode(&keyframes, &opts).expect("Failed encoding");
+    eprintln!("Finished!");
 }
