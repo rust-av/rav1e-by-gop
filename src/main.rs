@@ -138,9 +138,8 @@ fn main() {
 
     eprintln!("Analyzing scene cuts...");
     let keyframes = detect_keyframes(&opts).expect("Failed to run keyframe detection");
-    eprintln!("Finished analyzing scene cuts");
 
-    eprintln!("Starting encoding...");
+    eprintln!("Encoding {} segments...", keyframes.len());
     perform_encode(&keyframes, &opts).expect("Failed encoding");
     eprintln!("Finished!");
 }

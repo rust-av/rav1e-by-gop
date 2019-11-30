@@ -34,14 +34,17 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
         video_info.bit_depth
     );
 
-    let num_threads = cmp::min(keyframes.len(), num_cpus::get());
+    let mut num_threads = cmp::min(keyframes.len(), num_cpus::get());
+    if let Some(max_threads) = opts.max_threads {
+        num_threads = cmp::min(num_threads, max_threads);
+    }
     let mut thread_pool = ThreadPool::new(num_threads);
     eprintln!("Using {} encoder threads", num_threads);
 
     let mut current_frameno = 0;
     let mut iter = keyframes.iter().enumerate().peekable();
     while let Some((idx, &keyframe)) = iter.next() {
-        while thread_pool.active_count() == num_threads {
+        while thread_pool.active_count() + thread_pool.queued_count() == num_threads {
             // Loading frames costs a significant amount of memory,
             // so don't load frames until we're ready to encode them.
             sleep(Duration::from_millis(250));
@@ -339,6 +342,7 @@ fn mux_output_files(out_filename: &str, num_segments: usize) -> Result<(), Box<d
     }
 
     let result = Command::new("ffmpeg")
+        .arg("-y")
         .arg("-f")
         .arg("concat")
         .arg("-safe")
