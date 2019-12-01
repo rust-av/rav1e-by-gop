@@ -140,7 +140,7 @@ fn main() {
     assert!(opts.output.ends_with(".ivf"), "Output must be a .ivf file");
 
     if is_tty(&stderr()) {
-        eprint!("{}{}", clear::All, cursor::Goto(0, 0));
+        eprint!("{}{}", clear::All, cursor::Goto(1, 1));
     }
     eprintln!("Analyzing scene cuts...");
     let keyframes = detect_keyframes(&opts).expect("Failed to run keyframe detection");
