@@ -51,3 +51,9 @@ To limit the number of threads
 (this tool will never use more than the number of CPUs):
 
 `rav1e-by-gop input.y4m --threads 4 -o output.ivf`
+
+## Limitations
+
+- Only supports one-pass QP mode
+  - One-pass bitrate mode will never be supported, because it's bad
+  - Two-pass bitrate mode may be supported in the future
