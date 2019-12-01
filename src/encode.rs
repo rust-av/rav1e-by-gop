@@ -183,6 +183,13 @@ fn do_encode<T: Pixel>(
     }
     ctx.flush();
 
+    output.write_header(
+        video_info.width,
+        video_info.height,
+        cfg.enc.time_base.den as usize,
+        cfg.enc.time_base.num as usize,
+    );
+
     while let Some(frame_info) = process_frame(&mut ctx, output)? {
         for frame in frame_info {
             progress.add_frame(frame.clone());
