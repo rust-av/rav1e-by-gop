@@ -106,6 +106,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
             break;
         }
     }
+
     let mut cfg = Config {
         enc: EncoderConfig::with_speed_preset(opts.speed),
         threads: 1,
@@ -120,6 +121,8 @@ fn encode_segment<T: Pixel, D: Decoder>(
     cfg.enc.max_key_frame_interval = opts.max_keyint;
     cfg.enc.quantizer = opts.qp;
     cfg.enc.tiles = 1;
+    cfg.enc.speed_settings.no_scene_detection = true;
+
     let out_filename = opts.output.to_string();
     eprintln!(
         "{}Segment {}/{}: Starting ({} frames)...",
