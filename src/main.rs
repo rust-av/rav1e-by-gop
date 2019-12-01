@@ -57,8 +57,9 @@ impl<'a> Input<'a> {
         Ok(match self {
             Input::File(filename) => Box::new(File::open(filename)?) as Box<dyn Read>,
             Input::Pipe(command) => {
-                let pipe = Command::new(command.split(' ').next().unwrap())
-                    .args(&command.split(' ').skip(1).collect::<Vec<_>>())
+                let command = parse_argv(parse_args(command));
+                let pipe = Command::new(&command[0])
+                    .args(&command[1..])
                     .stdout(Stdio::piped())
                     .stderr(Stdio::null())
                     .spawn()?;
@@ -66,6 +67,33 @@ impl<'a> Input<'a> {
             }
         })
     }
+}
+
+fn parse_args(s: &str) -> String {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    s.chars()
+        .map(|c| {
+            if c == '"' && !in_single_quote {
+                in_double_quote = !in_double_quote;
+                '\n'
+            } else if c == '\'' && !in_double_quote {
+                in_single_quote = !in_single_quote;
+                '\n'
+            } else if !in_single_quote && !in_double_quote && char::is_whitespace(c) {
+                '\n'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
+fn parse_argv(s: String) -> Vec<String> {
+    s.split('\n')
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string())
+        .collect::<Vec<String>>()
 }
 
 fn main() {
