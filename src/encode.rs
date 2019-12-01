@@ -77,6 +77,9 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
         }
     }
     thread_pool.join();
+    if is_tty(&stderr()) {
+        eprint!("{}", cursor::Goto(1, keyframes.len() as u16 + 5));
+    }
     mux_output_files(opts.output, keyframes.len())?;
 
     Ok(())
@@ -124,13 +127,15 @@ fn encode_segment<T: Pixel, D: Decoder>(
     cfg.enc.speed_settings.no_scene_detection = true;
 
     let out_filename = opts.output.to_string();
-    eprintln!(
-        "{}Segment {}/{}: Starting ({} frames)...",
-        cursor::Goto(0, segment_idx as u16 + 4),
-        segment_idx,
-        segment_count,
-        frames.len()
-    );
+    if is_tty(&stderr()) {
+        eprintln!(
+            "{}Segment {}/{}: Starting ({} frames)...",
+            cursor::Goto(1, segment_idx as u16 + 4),
+            segment_idx,
+            segment_count,
+            frames.len()
+        );
+    }
     thread_pool.execute(move || {
         let mut output = create_muxer(&get_segment_output_filename(&out_filename, segment_idx))
             .expect("Failed to create segment output");
@@ -197,7 +202,7 @@ fn do_encode<T: Pixel>(
         if is_tty(&stderr()) {
             eprint!(
                 "{}{}Segment {}/{}: {}",
-                cursor::Goto(0, segment_idx as u16 + 4),
+                cursor::Goto(1, segment_idx as u16 + 4),
                 clear::CurrentLine,
                 segment_idx,
                 segment_count,
