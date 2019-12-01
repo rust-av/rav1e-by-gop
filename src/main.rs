@@ -8,8 +8,10 @@ use self::encode::perform_encode;
 use clap::{App, Arg, ArgMatches};
 use std::error::Error;
 use std::fs::File;
+use std::io::stderr;
 use std::io::Read;
 use std::process::{Command, Stdio};
+use termion::{clear, cursor, is_tty};
 
 #[derive(Debug, Clone, Copy)]
 pub struct CliOptions<'a> {
@@ -58,6 +60,7 @@ impl<'a> Input<'a> {
                 let pipe = Command::new(command.split(' ').next().unwrap())
                     .args(&command.split(' ').skip(1).collect::<Vec<_>>())
                     .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
                     .spawn()?;
                 Box::new(pipe.stdout.unwrap()) as Box<dyn Read>
             }
@@ -136,6 +139,9 @@ fn main() {
     let opts = CliOptions::from(&matches);
     assert!(opts.output.ends_with(".ivf"), "Output must be a .ivf file");
 
+    if is_tty(&stderr()) {
+        eprint!("{}{}", clear::All, cursor::Goto(0, 0));
+    }
     eprintln!("Analyzing scene cuts...");
     let keyframes = detect_keyframes(&opts).expect("Failed to run keyframe detection");
 

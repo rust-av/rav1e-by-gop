@@ -12,12 +12,12 @@ use std::io::stderr;
 use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
-use termion::*;
+use termion::{clear, cursor, is_tty};
 use threadpool::ThreadPool;
 
 pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<dyn Error>> {
@@ -60,6 +60,7 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
                 &mut current_frameno,
                 &mut thread_pool,
                 idx + 1,
+                keyframes.len(),
             )?;
         } else {
             encode_segment::<u16, _>(
@@ -71,6 +72,7 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
                 &mut current_frameno,
                 &mut thread_pool,
                 idx + 1,
+                keyframes.len(),
             )?;
         }
     }
@@ -90,6 +92,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
     current_frameno: &mut usize,
     thread_pool: &mut ThreadPool,
     segment_idx: usize,
+    segment_count: usize,
 ) -> Result<(), Box<dyn Error>> {
     let mut frames = Vec::with_capacity(next_keyframe.map(|next| next - keyframe).unwrap_or(0));
     while next_keyframe
@@ -119,15 +122,24 @@ fn encode_segment<T: Pixel, D: Decoder>(
     cfg.enc.tiles = 1;
     let out_filename = opts.output.to_string();
     eprintln!(
-        "Segment {}: Starting ({} frames)...",
+        "{}Segment {}/{}: Starting ({} frames)...",
+        cursor::Goto(0, segment_idx as u16 + 4),
         segment_idx,
+        segment_count,
         frames.len()
     );
     thread_pool.execute(move || {
         let mut output = create_muxer(&get_segment_output_filename(&out_filename, segment_idx))
             .expect("Failed to create segment output");
-        do_encode(cfg, video_info, &mut *output, frames, segment_idx)
-            .expect("Failed encoding segment");
+        do_encode(
+            cfg,
+            video_info,
+            &mut *output,
+            frames,
+            segment_idx,
+            segment_count,
+        )
+        .expect("Failed encoding segment");
     });
     Ok(())
 }
@@ -152,6 +164,7 @@ fn do_encode<T: Pixel>(
     output: &mut dyn Muxer,
     frames: Vec<Frame<T>>,
     segment_idx: usize,
+    segment_count: usize,
 ) -> Result<(), Box<dyn Error>> {
     let mut ctx: Context<T> = cfg.new_context()?;
     let mut progress = ProgressInfo::new(
@@ -173,13 +186,18 @@ fn do_encode<T: Pixel>(
         }
         if is_tty(&stderr()) {
             eprint!(
-                "{}Segment {}: {}",
+                "{}{}Segment {}/{}: {}",
+                cursor::Goto(0, segment_idx as u16 + 4),
                 clear::CurrentLine,
                 segment_idx,
+                segment_count,
                 progress
             );
         }
         output.flush().unwrap();
+    }
+    if !is_tty(&stderr()) {
+        eprint!("Segment {}/{}: {}", segment_idx, segment_count, progress);
     }
     Ok(())
 }
@@ -253,9 +271,7 @@ impl ProgressInfo {
     }
 
     pub fn encoding_fps(&self) -> f64 {
-        let duration = Instant::now().duration_since(self.time_started);
-        self.frame_info.len() as f64
-            / (duration.as_secs() as f64 + duration.subsec_millis() as f64 / 1000f64)
+        self.frame_info.len() as f64 / self.elapsed_time()
     }
 
     pub fn video_fps(&self) -> f64 {
@@ -278,20 +294,37 @@ impl ProgressInfo {
     pub fn estimated_time(&self) -> u64 {
         ((self.total_frames - self.frames_encoded()) as f64 / self.encoding_fps()) as u64
     }
+
+    pub fn elapsed_time(&self) -> f64 {
+        let duration = Instant::now().duration_since(self.time_started);
+        (duration.as_secs() as f64 + duration.subsec_millis() as f64 / 1000f64)
+    }
 }
 
 impl fmt::Display for ProgressInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}/{} frames, {:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, est. time: {}",
-            self.frames_encoded(),
-            self.total_frames,
-            self.encoding_fps(),
-            self.bitrate() as f64 / 1000f64,
-            self.estimated_size() as f64 / (1024 * 1024) as f64,
-            secs_to_human_time(self.estimated_time())
-        )
+        if self.frames_encoded() == self.total_frames {
+            write!(
+                f,
+                "Done, {} frames in {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
+                self.frames_encoded(),
+                secs_to_human_time(self.elapsed_time().round() as u64),
+                self.encoding_fps(),
+                self.bitrate() as f64 / 1000f64,
+                self.estimated_size() as f64 / (1024 * 1024) as f64,
+            )
+        } else {
+            write!(
+                f,
+                "{}/{} frames, {:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, est. time: {}",
+                self.frames_encoded(),
+                self.total_frames,
+                self.encoding_fps(),
+                self.bitrate() as f64 / 1000f64,
+                self.estimated_size() as f64 / (1024 * 1024) as f64,
+                secs_to_human_time(self.estimated_time())
+            )
+        }
     }
 }
 
@@ -352,6 +385,7 @@ fn mux_output_files(out_filename: &str, num_segments: usize) -> Result<(), Box<d
         .arg("-c")
         .arg("copy")
         .arg(out_filename)
+        .stderr(Stdio::null())
         .status()?;
     if !result.success() {
         return Err(Box::new(EncodeError::CommandFailure("ffmpeg")));
