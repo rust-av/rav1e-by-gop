@@ -320,6 +320,9 @@ impl ProgressInfo {
 
     // Estimates the final filesize in bytes, if the number of frames is known
     pub fn estimated_size(&self) -> usize {
+        if self.frames_encoded() == 0 {
+            return 0;
+        }
         self.encoded_size * self.total_frames / self.frames_encoded()
     }
 
