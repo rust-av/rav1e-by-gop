@@ -103,7 +103,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
         .unwrap_or(true)
     {
         if let Ok(frame) = dec.read_frame::<T>(&video_info) {
-            frames.push(frame);
+            frames.push(Arc::new(frame));
             *current_frameno += 1;
         } else {
             break;
@@ -136,14 +136,19 @@ fn encode_segment<T: Pixel, D: Decoder>(
             frames.len()
         );
     }
+
     thread_pool.execute(move || {
+        let source = Source {
+            frames,
+            sent_count: 0,
+        };
         let mut output = create_muxer(&get_segment_output_filename(&out_filename, segment_idx))
             .expect("Failed to create segment output");
         do_encode(
             cfg,
             video_info,
+            source,
             &mut *output,
-            frames,
             segment_idx,
             segment_count,
         )
@@ -169,8 +174,8 @@ fn get_segment_list_filename(output: &str) -> String {
 fn do_encode<T: Pixel>(
     cfg: Config,
     video_info: VideoDetails,
+    mut source: Source<T>,
     output: &mut dyn Muxer,
-    frames: Vec<Frame<T>>,
     segment_idx: usize,
     segment_count: usize,
 ) -> Result<(), Box<dyn Error>> {
@@ -180,13 +185,8 @@ fn do_encode<T: Pixel>(
             num: video_info.time_base.den,
             den: video_info.time_base.num,
         },
-        frames.len(),
+        source.frames.len(),
     );
-
-    for frame in frames {
-        ctx.send_frame(Some(Arc::new(frame)))?;
-    }
-    ctx.flush();
 
     output.write_header(
         video_info.width,
@@ -195,7 +195,7 @@ fn do_encode<T: Pixel>(
         cfg.enc.time_base.num as usize,
     );
 
-    while let Some(frame_info) = process_frame(&mut ctx, output)? {
+    while let Some(frame_info) = process_frame(&mut ctx, &mut source, output)? {
         for frame in frame_info {
             progress.add_frame(frame.clone());
         }
@@ -217,8 +217,26 @@ fn do_encode<T: Pixel>(
     Ok(())
 }
 
+struct Source<T: Pixel> {
+    sent_count: usize,
+    frames: Vec<Arc<Frame<T>>>,
+}
+
+impl<T: Pixel> Source<T> {
+    fn read_frame(&mut self, ctx: &mut Context<T>) {
+        if self.sent_count == self.frames.len() {
+            ctx.flush();
+            return;
+        }
+
+        let _ = ctx.send_frame(Some(self.frames[self.sent_count].clone()));
+        self.sent_count += 1;
+    }
+}
+
 fn process_frame<T: Pixel>(
     ctx: &mut Context<T>,
+    source: &mut Source<T>,
     output: &mut dyn Muxer,
 ) -> Result<Option<Vec<FrameSummary>>, Box<dyn Error>> {
     let mut frame_summaries = Vec::new();
@@ -229,7 +247,7 @@ fn process_frame<T: Pixel>(
             frame_summaries.push(pkt.into());
         }
         Err(EncoderStatus::NeedMoreData) => {
-            unreachable!();
+            source.read_frame(ctx);
         }
         Err(EncoderStatus::EnoughData) => {
             unreachable!();
