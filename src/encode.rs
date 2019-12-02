@@ -199,7 +199,7 @@ fn do_encode<T: Pixel>(
         for frame in frame_info {
             progress.add_frame(frame.clone());
         }
-        if is_tty(&stderr()) {
+        if is_tty(&stderr()) && progress.frames_encoded() > 0 {
             eprint!(
                 "{}{}Segment {}/{}: {}",
                 cursor::Goto(1, segment_idx as u16 + 4),
@@ -320,9 +320,6 @@ impl ProgressInfo {
 
     // Estimates the final filesize in bytes, if the number of frames is known
     pub fn estimated_size(&self) -> usize {
-        if self.frames_encoded() == 0 {
-            return 0;
-        }
         self.encoded_size * self.total_frames / self.frames_encoded()
     }
 
