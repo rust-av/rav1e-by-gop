@@ -44,7 +44,10 @@ jobs:
 
 
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
 
     steps:
     - uses: actions/checkout@v1
@@ -54,7 +57,8 @@ jobs:
         profile: minimal
         toolchain: stable
         override: true
-    - name: Install nasm
+    - name: Install nasm for Ubuntu
+      if: matrix.platform == 'ubuntu-latest'
       env:
         LINK: http://debian-archive.trafficmanager.net/debian/pool/main/n/nasm
         NASM_VERSION: 2.14.02-1
@@ -64,6 +68,18 @@ jobs:
         curl -O "$LINK/nasm_${NASM_VERSION}_amd64.deb"
         echo "$NASM_SHA256 nasm_${NASM_VERSION}_amd64.deb" | sha256sum --check
         sudo dpkg -i "nasm_${NASM_VERSION}_amd64.deb"
+    - name: Install nasm for Windows
+      if: matrix.platform == 'windows-latest'
+      run: |
+        $NASM_VERSION="nasm-2.14.02"
+        curl -LO "https://people.xiph.org/~tdaede/$NASM_VERSION-win64.zip"
+        7z e -y "$NASM_VERSION-win64.zip" -o"C:\nasm"
+    - name: Set environment variables
+      if: matrix.platform == 'windows-latest'
+      run: |
+        $VS="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise"
+        $COMPILER_SUBPATH="VC\Tools\MSVC\14.23.28105\bin\Hostx64\x64"
+        echo "::add-path::$VS\$COMPILER_SUBPATH;C:\nasm"
     - name: Build
       run: cargo build --all-features --tests --benches
     - name: Run tests
