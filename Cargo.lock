@@ -44,7 +44,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "av-scenechange"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "num-traits 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -430,7 +430,7 @@ dependencies = [
 name = "rav1e-by-gop"
 version = "0.1.0"
 dependencies = [
- "av-scenechange 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "av-scenechange 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "err-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ivf 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -633,7 +633,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum arrayvec 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
 "checksum atty 0.2.13 (registry+https://github.com/rust-lang/crates.io-index)" = "1803c647a3ec87095e7ae7acfca019e98de5ec9a7d01343f611cf3152ed71a90"
 "checksum autocfg 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "1d49d90015b3c36167a20fe2810c5cd875ad504b39cff3d4eae7977e6b7c1cb2"
-"checksum av-scenechange 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b35eb0d927fef6b5ade098b902688abcc0956a3e8a7c8f41fb2153c24c999a2d"
+"checksum av-scenechange 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "0bcf32edc4e1e89ad4368e71f89d628e2a79fc1acaaec716a905204975af37e3"
 "checksum bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)" = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 "checksum bitstream-io 0.8.4 (registry+https://github.com/rust-lang/crates.io-index)" = "395bab683d996399e6046dbea0f7e616d3d8234bf87c1bd88173018f560dd653"
 "checksum c2-chacha 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "214238caa1bf3a496ec3392968969cab8549f96ff30652c9e56885329315f6bb"
