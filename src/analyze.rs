@@ -1,19 +1,18 @@
 use crate::CliOptions;
 use av_scenechange::{detect_scene_changes, DetectionOptions};
+use console::Term;
 use std::error::Error;
-use std::io::stderr;
-use termion::{clear, cursor, is_tty};
 
 pub fn detect_keyframes(opts: &CliOptions) -> Result<Vec<usize>, Box<dyn Error>> {
     eprint!("Analyzing scene cuts...");
     let report_progress = |frames: usize, _kf: usize| {
-        eprint!(
-            "{}{}Analyzing scene cuts: {} frames analyzed",
-            cursor::Goto(1, 1),
-            clear::CurrentLine,
-            frames
-        );
+        let term_out = Term::stdout();
+        term_out.move_cursor_to(0, 0).unwrap();
+        term_out.clear_line().unwrap();
+        eprint!("Analyzing scene cuts: {} frames analyzed", frames);
     };
+
+    let term_err = Term::stderr();
 
     let sc_opts = DetectionOptions {
         use_chroma: opts.speed < 10,
@@ -21,7 +20,7 @@ pub fn detect_keyframes(opts: &CliOptions) -> Result<Vec<usize>, Box<dyn Error>>
         lookahead_distance: 5,
         min_scenecut_distance: Some(opts.min_keyint as usize),
         max_scenecut_distance: Some(opts.max_keyint as usize),
-        progress_callback: if is_tty(&stderr()) {
+        progress_callback: if term_err.is_term() {
             Some(Box::new(report_progress))
         } else {
             None

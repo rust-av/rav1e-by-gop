@@ -1,6 +1,7 @@
 use crate::decode::{Decoder, VideoDetails};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
+use console::Term;
 use err_derive::Error;
 use rav1e::prelude::*;
 use std::cmp;
@@ -8,7 +9,6 @@ use std::error::Error;
 use std::fmt;
 use std::fs::remove_file;
 use std::fs::File;
-use std::io::stderr;
 use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
@@ -17,7 +17,6 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
-use termion::{clear, cursor, is_tty};
 use threadpool::ThreadPool;
 
 pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<dyn Error>> {
@@ -77,8 +76,11 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
         }
     }
     thread_pool.join();
-    if is_tty(&stderr()) {
-        eprint!("{}", cursor::Goto(1, keyframes.len() as u16 + 5));
+    let term_err = Term::stderr();
+    if term_err.is_term() {
+        term_err
+            .move_cursor_to(0, (keyframes.len() as u16 + 5) as usize)
+            .unwrap();
     }
     mux_output_files(opts.output, keyframes.len())?;
 
@@ -127,10 +129,13 @@ fn encode_segment<T: Pixel, D: Decoder>(
     cfg.enc.speed_settings.no_scene_detection = true;
 
     let out_filename = opts.output.to_string();
-    if is_tty(&stderr()) {
+    let term_err = Term::stderr();
+    if term_err.is_term() {
+        term_err
+            .move_cursor_to(0, (segment_idx as u16 + 4) as usize)
+            .unwrap();
         eprintln!(
-            "{}Segment {}/{}: Starting ({} frames)...",
-            cursor::Goto(1, segment_idx as u16 + 4),
+            "Segment {}/{}: Starting ({} frames)...",
             segment_idx,
             segment_count,
             frames.len()
@@ -195,23 +200,22 @@ fn do_encode<T: Pixel>(
         cfg.enc.time_base.num as usize,
     );
 
+    let term_err = Term::stderr();
+
     while let Some(frame_info) = process_frame(&mut ctx, &mut source, output)? {
         for frame in frame_info {
             progress.add_frame(frame.clone());
         }
-        if is_tty(&stderr()) && progress.frames_encoded() > 0 {
-            eprint!(
-                "{}{}Segment {}/{}: {}",
-                cursor::Goto(1, segment_idx as u16 + 4),
-                clear::CurrentLine,
-                segment_idx,
-                segment_count,
-                progress
-            );
+        if term_err.is_term() && progress.frames_encoded() > 0 {
+            term_err
+                .move_cursor_to(0, (segment_idx as u16 + 4) as usize)
+                .unwrap();
+            term_err.clear_line().unwrap();
+            eprint!("Segment {}/{}: {}", segment_idx, segment_count, progress);
         }
         output.flush().unwrap();
     }
-    if !is_tty(&stderr()) {
+    if !term_err.is_term() {
         eprint!("Segment {}/{}: {}", segment_idx, segment_count, progress);
     }
     Ok(())
