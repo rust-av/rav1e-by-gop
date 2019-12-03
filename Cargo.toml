@@ -15,7 +15,7 @@ err-derive = "0.2"
 ivf = "0.1"
 num_cpus = "1"
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm"] }
-termion = "1"
+console = "0.9.1"
 threadpool = "1"
 y4m = "0.5"
 

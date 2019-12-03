@@ -6,12 +6,11 @@ mod muxer;
 use self::analyze::detect_keyframes;
 use self::encode::perform_encode;
 use clap::{App, Arg, ArgMatches};
+use console::Term;
 use std::error::Error;
 use std::fs::File;
-use std::io::stderr;
 use std::io::Read;
 use std::process::{Command, Stdio};
-use termion::{clear, cursor, is_tty};
 
 #[derive(Debug, Clone, Copy)]
 pub struct CliOptions<'a> {
@@ -167,9 +166,12 @@ fn main() {
     let opts = CliOptions::from(&matches);
     assert!(opts.output.ends_with(".ivf"), "Output must be a .ivf file");
 
-    if is_tty(&stderr()) {
-        eprint!("{}{}", clear::All, cursor::Goto(1, 1));
+    let term = Term::stderr();
+    if term.is_term() {
+        term.clear_screen().unwrap();
+        term.move_cursor_to(0, 0).unwrap();
     }
+
     let keyframes = detect_keyframes(&opts).expect("Failed to run keyframe detection");
 
     eprintln!("\nEncoding {} segments...", keyframes.len());
