@@ -193,6 +193,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
 
         if term_err.is_term() {
             term_err.move_cursor_to(0, 4).unwrap();
+            term_err.clear_line().unwrap();
             eprintln!(
                 "[{}] Progress: {}",
                 secs_to_human_time(total_progress.elapsed_time() as u64, true),
