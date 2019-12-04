@@ -5,6 +5,7 @@ mod muxer;
 
 use self::analyze::detect_keyframes;
 use self::encode::perform_encode;
+use crate::analyze::get_total_frame_count;
 use clap::{App, Arg, ArgMatches};
 use console::Term;
 use std::error::Error;
@@ -173,8 +174,9 @@ fn main() {
     }
 
     let keyframes = detect_keyframes(&opts).expect("Failed to run keyframe detection");
+    let frame_count = get_total_frame_count(&opts).expect("Failed to get frame count");
 
     eprintln!("\nEncoding {} segments...", keyframes.len());
-    perform_encode(&keyframes, &opts).expect("Failed encoding");
+    perform_encode(&keyframes, frame_count, &opts).expect("Failed encoding");
     eprintln!("Finished!");
 }

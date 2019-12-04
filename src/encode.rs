@@ -19,7 +19,11 @@ use std::time::Duration;
 use std::time::Instant;
 use threadpool::ThreadPool;
 
-pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<dyn Error>> {
+pub fn perform_encode(
+    keyframes: &[usize],
+    total_frames: usize,
+    opts: &CliOptions,
+) -> Result<(), Box<dyn Error>> {
     let mut reader = opts.input.as_reader()?;
     let mut dec = y4m::decode(&mut reader).expect("input is not a y4m file");
     let video_info = dec.get_video_details();
@@ -39,8 +43,18 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
     }
     let mut thread_pool = ThreadPool::new(num_threads);
     eprintln!("Using {} encoder threads", num_threads);
+    eprintln!("[00:00:00] Starting encode...");
 
-    let progress_pool = Arc::new(Mutex::new(vec![false; num_threads]));
+    let progress_pool = Arc::new(Mutex::new((
+        vec![false; num_threads],
+        ProgressInfo::new(
+            Rational {
+                num: video_info.time_base.den,
+                den: video_info.time_base.num,
+            },
+            total_frames,
+        ),
+    )));
     let mut current_frameno = 0;
     let mut iter = keyframes.iter().enumerate().peekable();
     while let Some((idx, &keyframe)) = iter.next() {
@@ -52,8 +66,8 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
         let next_keyframe = iter.peek().map(|(_, next_fno)| **next_fno);
 
         let mut pool_lock = progress_pool.lock().unwrap();
-        let progress_slot = pool_lock.iter().position(|slot| !*slot).unwrap();
-        pool_lock[progress_slot] = true;
+        let progress_slot = pool_lock.0.iter().position(|slot| !*slot).unwrap();
+        pool_lock.0[progress_slot] = true;
 
         if video_info.bit_depth == 8 {
             encode_segment::<u8, _>(
@@ -107,7 +121,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
     segment_idx: usize,
     segment_count: usize,
     progress_slot: usize,
-    progress_pool: Arc<Mutex<Vec<bool>>>,
+    progress_pool: Arc<Mutex<(Vec<bool>, ProgressInfo)>>,
 ) -> Result<(), Box<dyn Error>> {
     let mut frames = Vec::with_capacity(next_keyframe.map(|next| next - keyframe).unwrap_or(0));
     while next_keyframe
@@ -159,7 +173,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
         };
         let mut output = create_muxer(&get_segment_output_filename(&out_filename, segment_idx))
             .expect("Failed to create segment output");
-        do_encode(
+        let progress = do_encode(
             cfg,
             video_info,
             source,
@@ -170,7 +184,21 @@ fn encode_segment<T: Pixel, D: Decoder>(
         )
         .expect("Failed encoding segment");
         let mut pool_lock = progress_pool.lock().unwrap();
-        pool_lock[progress_slot] = false;
+        pool_lock.0[progress_slot] = false;
+        let total_progress = &mut pool_lock.1;
+        total_progress
+            .frame_info
+            .extend_from_slice(&progress.frame_info);
+        total_progress.encoded_size += progress.encoded_size;
+
+        if term_err.is_term() {
+            term_err.move_cursor_to(0, 4).unwrap();
+            eprintln!(
+                "[{}] Progress: {}",
+                secs_to_human_time(total_progress.elapsed_time() as u64, true),
+                total_progress
+            );
+        }
     });
     Ok(())
 }
@@ -197,7 +225,7 @@ fn do_encode<T: Pixel>(
     segment_idx: usize,
     segment_count: usize,
     progress_slot: usize,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<ProgressInfo, Box<dyn Error>> {
     let mut ctx: Context<T> = cfg.new_context()?;
     let mut progress = ProgressInfo::new(
         Rational {
@@ -249,7 +277,7 @@ fn do_encode<T: Pixel>(
             .unwrap();
         term_err.clear_line().unwrap();
     }
-    Ok(())
+    Ok(progress)
 }
 
 struct Source<T: Pixel> {

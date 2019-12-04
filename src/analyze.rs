@@ -39,3 +39,17 @@ pub fn detect_keyframes(opts: &CliOptions) -> Result<Vec<usize>, Box<dyn Error>>
         detect_scene_changes::<_, u16>(&mut dec, sc_opts)
     })
 }
+
+pub fn get_total_frame_count(opts: &CliOptions) -> Result<usize, Box<dyn Error>> {
+    let mut reader = if let Some(fast_fp) = opts.first_pass_input {
+        fast_fp.as_reader()?
+    } else {
+        opts.input.as_reader()?
+    };
+    let mut dec = y4m::decode(&mut reader).expect("input is not a y4m file");
+    let mut count = 0;
+    while dec.read_frame().is_ok() {
+        count += 1;
+    }
+    Ok(count)
+}
