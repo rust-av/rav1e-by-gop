@@ -13,7 +13,7 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
@@ -40,6 +40,7 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
     let mut thread_pool = ThreadPool::new(num_threads);
     eprintln!("Using {} encoder threads", num_threads);
 
+    let progress_pool = Arc::new(Mutex::new(vec![false; num_threads]));
     let mut current_frameno = 0;
     let mut iter = keyframes.iter().enumerate().peekable();
     while let Some((idx, &keyframe)) = iter.next() {
@@ -49,6 +50,11 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
             sleep(Duration::from_millis(250));
         }
         let next_keyframe = iter.peek().map(|(_, next_fno)| **next_fno);
+
+        let mut pool_lock = progress_pool.lock().unwrap();
+        let progress_slot = pool_lock.iter().position(|slot| !*slot).unwrap();
+        pool_lock[progress_slot] = true;
+
         if video_info.bit_depth == 8 {
             encode_segment::<u8, _>(
                 &mut dec,
@@ -60,6 +66,8 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
                 &mut thread_pool,
                 idx + 1,
                 keyframes.len(),
+                progress_slot,
+                progress_pool.clone(),
             )?;
         } else {
             encode_segment::<u16, _>(
@@ -72,15 +80,15 @@ pub fn perform_encode(keyframes: &[usize], opts: &CliOptions) -> Result<(), Box<
                 &mut thread_pool,
                 idx + 1,
                 keyframes.len(),
+                progress_slot,
+                progress_pool.clone(),
             )?;
         }
     }
     thread_pool.join();
     let term_err = Term::stderr();
     if term_err.is_term() {
-        term_err
-            .move_cursor_to(0, (keyframes.len() as u16 + 5) as usize)
-            .unwrap();
+        term_err.move_cursor_to(0, 5).unwrap();
     }
     mux_output_files(opts.output, keyframes.len())?;
 
@@ -98,6 +106,8 @@ fn encode_segment<T: Pixel, D: Decoder>(
     thread_pool: &mut ThreadPool,
     segment_idx: usize,
     segment_count: usize,
+    progress_slot: usize,
+    progress_pool: Arc<Mutex<Vec<bool>>>,
 ) -> Result<(), Box<dyn Error>> {
     let mut frames = Vec::with_capacity(next_keyframe.map(|next| next - keyframe).unwrap_or(0));
     while next_keyframe
@@ -132,10 +142,10 @@ fn encode_segment<T: Pixel, D: Decoder>(
     let term_err = Term::stderr();
     if term_err.is_term() {
         term_err
-            .move_cursor_to(0, (segment_idx as u16 + 4) as usize)
+            .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
             .unwrap();
         eprintln!(
-            "Segment {}/{}: Starting ({} frames)...",
+            "[00:00:00] Segment {}/{}: Starting ({} frames)...",
             segment_idx,
             segment_count,
             frames.len()
@@ -156,8 +166,11 @@ fn encode_segment<T: Pixel, D: Decoder>(
             &mut *output,
             segment_idx,
             segment_count,
+            progress_slot,
         )
         .expect("Failed encoding segment");
+        let mut pool_lock = progress_pool.lock().unwrap();
+        pool_lock[progress_slot] = false;
     });
     Ok(())
 }
@@ -183,6 +196,7 @@ fn do_encode<T: Pixel>(
     output: &mut dyn Muxer,
     segment_idx: usize,
     segment_count: usize,
+    progress_slot: usize,
 ) -> Result<(), Box<dyn Error>> {
     let mut ctx: Context<T> = cfg.new_context()?;
     let mut progress = ProgressInfo::new(
@@ -208,15 +222,32 @@ fn do_encode<T: Pixel>(
         }
         if term_err.is_term() && progress.frames_encoded() > 0 {
             term_err
-                .move_cursor_to(0, (segment_idx as u16 + 4) as usize)
+                .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
                 .unwrap();
             term_err.clear_line().unwrap();
-            eprint!("Segment {}/{}: {}", segment_idx, segment_count, progress);
+            eprint!(
+                "[{}] Segment {}/{}: {}",
+                secs_to_human_time(progress.elapsed_time() as u64, true),
+                segment_idx,
+                segment_count,
+                progress
+            );
         }
         output.flush().unwrap();
     }
     if !term_err.is_term() {
-        eprint!("Segment {}/{}: {}", segment_idx, segment_count, progress);
+        eprint!(
+            "[{}] Segment {}/{}: {}",
+            secs_to_human_time(progress.elapsed_time() as u64, true),
+            segment_idx,
+            segment_count,
+            progress
+        );
+    } else {
+        term_err
+            .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
+            .unwrap();
+        term_err.clear_line().unwrap();
     }
     Ok(())
 }
@@ -340,42 +371,28 @@ impl ProgressInfo {
 
 impl fmt::Display for ProgressInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.frames_encoded() == self.total_frames {
-            write!(
-                f,
-                "Done, {} frames in {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
-                self.frames_encoded(),
-                secs_to_human_time(self.elapsed_time().round() as u64),
-                self.encoding_fps(),
-                self.bitrate() as f64 / 1000f64,
-                self.estimated_size() as f64 / (1024 * 1024) as f64,
-            )
-        } else {
-            write!(
-                f,
-                "{}/{} frames, {:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, est. time: {}",
-                self.frames_encoded(),
-                self.total_frames,
-                self.encoding_fps(),
-                self.bitrate() as f64 / 1000f64,
-                self.estimated_size() as f64 / (1024 * 1024) as f64,
-                secs_to_human_time(self.estimated_time())
-            )
-        }
+        write!(
+            f,
+            "{}/{} frames, {:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, est. time: {}",
+            self.frames_encoded(),
+            self.total_frames,
+            self.encoding_fps(),
+            self.bitrate() as f64 / 1000f64,
+            self.estimated_size() as f64 / (1024 * 1024) as f64,
+            secs_to_human_time(self.estimated_time(), false)
+        )
     }
 }
 
-fn secs_to_human_time(mut secs: u64) -> String {
+fn secs_to_human_time(mut secs: u64, always_show_hours: bool) -> String {
     let mut mins = secs / 60;
     secs %= 60;
     let hours = mins / 60;
     mins %= 60;
-    if hours > 0 {
-        format!("{}h {}m {}s", hours, mins, secs)
-    } else if mins > 0 {
-        format!("{}m {}s", mins, secs)
+    if hours > 0 || always_show_hours {
+        format!("{:02}:{:02}:{:02}", hours, mins, secs)
     } else {
-        format!("{}s", secs)
+        format!("{:02}:{:02}", mins, secs)
     }
 }
 
