@@ -6,7 +6,7 @@ use std::error::Error;
 pub fn detect_keyframes(opts: &CliOptions) -> Result<Vec<usize>, Box<dyn Error>> {
     eprint!("Analyzing scene cuts...");
     let report_progress = |frames: usize, _kf: usize| {
-        let term_out = Term::stdout();
+        let term_out = Term::stderr();
         term_out.move_cursor_to(0, 0).unwrap();
         term_out.clear_line().unwrap();
         eprint!("Analyzing scene cuts: {} frames analyzed", frames);
