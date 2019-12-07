@@ -123,6 +123,17 @@ fn encode_segment<T: Pixel, D: Decoder>(
     progress_slot: usize,
     progress_pool: Arc<Mutex<(Vec<bool>, ProgressInfo)>>,
 ) -> Result<(), Box<dyn Error>> {
+    let term_err = Term::stderr();
+    if term_err.is_term() {
+        term_err
+            .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
+            .unwrap();
+        eprintln!(
+            "[00:00:00] Segment {}/{}: Starting...",
+            segment_idx, segment_count,
+        );
+    }
+
     let mut frames = Vec::with_capacity(next_keyframe.map(|next| next - keyframe).unwrap_or(0));
     while next_keyframe
         .map(|next| *current_frameno < next)
@@ -153,7 +164,6 @@ fn encode_segment<T: Pixel, D: Decoder>(
     cfg.enc.speed_settings.no_scene_detection = true;
 
     let out_filename = opts.output.to_string();
-    let term_err = Term::stderr();
     if term_err.is_term() {
         term_err
             .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
