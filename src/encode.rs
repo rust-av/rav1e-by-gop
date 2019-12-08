@@ -104,6 +104,8 @@ pub fn perform_encode(
     if term_err.is_term() {
         term_err.move_cursor_to(0, 5).unwrap();
     }
+    let pool_lock = progress_pool.lock().unwrap();
+    pool_lock.1.print_summary();
     mux_output_files(opts.output, keyframes.len())?;
 
     Ok(())
@@ -406,6 +408,60 @@ impl ProgressInfo {
         let duration = Instant::now().duration_since(self.time_started);
         (duration.as_secs() as f64 + duration.subsec_millis() as f64 / 1000f64)
     }
+
+    // Number of frames of given type which appear in the video
+    fn get_frame_type_count(&self, frame_type: FrameType) -> usize {
+        self.frame_info
+            .iter()
+            .filter(|frame| frame.frame_type == frame_type)
+            .count()
+    }
+
+    fn get_frame_type_avg_size(&self, frame_type: FrameType) -> usize {
+        let count = self.get_frame_type_count(frame_type);
+        if count == 0 {
+            return 0;
+        }
+        self.frame_info
+            .iter()
+            .filter(|frame| frame.frame_type == frame_type)
+            .map(|frame| frame.size)
+            .sum::<usize>()
+            / count
+    }
+
+    fn get_frame_type_avg_qp(&self, frame_type: FrameType) -> f32 {
+        let count = self.get_frame_type_count(frame_type);
+        if count == 0 {
+            return 0.;
+        }
+        self.frame_info
+            .iter()
+            .filter(|frame| frame.frame_type == frame_type)
+            .map(|frame| frame.qp as f32)
+            .sum::<f32>()
+            / count as f32
+    }
+
+    pub fn print_summary(&self) {
+        self.print_frame_type_summary(FrameType::KEY);
+        self.print_frame_type_summary(FrameType::INTER);
+        self.print_frame_type_summary(FrameType::INTRA_ONLY);
+        self.print_frame_type_summary(FrameType::SWITCH);
+    }
+
+    fn print_frame_type_summary(&self, frame_type: FrameType) {
+        let count = self.get_frame_type_count(frame_type);
+        let size = self.get_frame_type_avg_size(frame_type);
+        let avg_qp = self.get_frame_type_avg_qp(frame_type);
+        eprintln!(
+            "{:17} {:>6} | avg QP: {:6.2} | avg size: {:>7} B",
+            format!("{}:", frame_type),
+            count,
+            avg_qp,
+            size
+        );
+    }
 }
 
 impl fmt::Display for ProgressInfo {
@@ -435,12 +491,14 @@ fn secs_to_human_time(mut secs: u64, always_show_hours: bool) -> String {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FrameSummary {
     /// Frame size in bytes
     pub size: usize,
     pub input_frameno: u64,
     pub frame_type: FrameType,
+    /// QP selected for the frame.
+    pub qp: u8,
 }
 
 impl<T: Pixel> From<Packet<T>> for FrameSummary {
@@ -449,6 +507,7 @@ impl<T: Pixel> From<Packet<T>> for FrameSummary {
             size: packet.data.len(),
             input_frameno: packet.input_frameno,
             frame_type: packet.frame_type,
+            qp: packet.qp,
         }
     }
 }
