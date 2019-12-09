@@ -279,7 +279,7 @@ dependencies = [
 [[package]]
 name = "nasm-rs"
 version = "0.1.3"
-source = "git+https://github.com/xiph/rav1e#413ae889fde2d954cffd6892f10a779cbddd0441"
+source = "git+https://github.com/xiph/rav1e#2ec50e357aa60e7c69f5fec63d4c3761c6536e53"
 dependencies = [
  "rayon 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -426,7 +426,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.1.0"
-source = "git+https://github.com/xiph/rav1e#413ae889fde2d954cffd6892f10a779cbddd0441"
+source = "git+https://github.com/xiph/rav1e#2ec50e357aa60e7c69f5fec63d4c3761c6536e53"
 dependencies = [
  "arbitrary 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "arg_enum_proc_macro 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -619,7 +619,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#413ae889fde2d954cffd6892f10a779cbddd0441"
+source = "git+https://github.com/xiph/rav1e#2ec50e357aa60e7c69f5fec63d4c3761c6536e53"
 dependencies = [
  "bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
