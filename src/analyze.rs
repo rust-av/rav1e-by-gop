@@ -2,14 +2,14 @@ use crate::CliOptions;
 use av_scenechange::{detect_scene_changes, DetectionOptions};
 use console::Term;
 use std::error::Error;
+use std::io::Write;
 
 pub fn detect_keyframes(opts: &CliOptions) -> Result<Vec<usize>, Box<dyn Error>> {
     eprint!("Analyzing scene cuts...");
     let report_progress = |frames: usize, _kf: usize| {
-        let term_out = Term::stderr();
-        term_out.move_cursor_to(0, 0).unwrap();
-        term_out.clear_line().unwrap();
-        eprint!("Analyzing scene cuts: {} frames analyzed", frames);
+        let mut term_err = Term::stderr();
+        term_err.clear_line().unwrap();
+        let _ = write!(term_err, "Analyzing scene cuts: {} frames analyzed", frames);
     };
 
     let term_err = Term::stderr();
