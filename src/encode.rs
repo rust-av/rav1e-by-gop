@@ -125,12 +125,13 @@ fn encode_segment<T: Pixel, D: Decoder>(
     progress_slot: usize,
     progress_pool: Arc<Mutex<(Vec<bool>, ProgressInfo)>>,
 ) -> Result<(), Box<dyn Error>> {
-    let term_err = Term::stderr();
+    let mut term_err = Term::stderr();
     if term_err.is_term() {
         term_err
             .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
             .unwrap();
-        eprintln!(
+        let _ = writeln!(
+            term_err,
             "[00:00:00] Segment {}/{}: Starting...",
             segment_idx, segment_count,
         );
@@ -170,7 +171,8 @@ fn encode_segment<T: Pixel, D: Decoder>(
         term_err
             .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
             .unwrap();
-        eprintln!(
+        let _ = writeln!(
+            term_err,
             "[00:00:00] Segment {}/{}: Starting ({} frames)...",
             segment_idx,
             segment_count,
@@ -206,7 +208,8 @@ fn encode_segment<T: Pixel, D: Decoder>(
         if term_err.is_term() {
             term_err.move_cursor_to(0, 4).unwrap();
             term_err.clear_line().unwrap();
-            eprintln!(
+            let _ = writeln!(
+                term_err,
                 "[{}] Progress: {}",
                 secs_to_human_time(total_progress.elapsed_time() as u64, true),
                 total_progress
@@ -255,7 +258,7 @@ fn do_encode<T: Pixel>(
         cfg.enc.time_base.num as usize,
     );
 
-    let term_err = Term::stderr();
+    let mut term_err = Term::stderr();
 
     while let Some(frame_info) = process_frame(&mut ctx, &mut source, output)? {
         for frame in frame_info {
@@ -266,7 +269,8 @@ fn do_encode<T: Pixel>(
                 .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
                 .unwrap();
             term_err.clear_line().unwrap();
-            eprint!(
+            let _ = write!(
+                term_err,
                 "[{}] Segment {}/{}: {}",
                 secs_to_human_time(progress.elapsed_time() as u64, true),
                 segment_idx,
@@ -277,7 +281,8 @@ fn do_encode<T: Pixel>(
         output.flush().unwrap();
     }
     if !term_err.is_term() {
-        eprint!(
+        let _ = write!(
+            term_err,
             "[{}] Segment {}/{}: {}",
             secs_to_human_time(progress.elapsed_time() as u64, true),
             segment_idx,
