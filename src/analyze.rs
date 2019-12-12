@@ -1,10 +1,10 @@
 use crate::CliOptions;
-use av_scenechange::{detect_scene_changes, DetectionOptions};
+use av_scenechange::{detect_scene_changes, DetectionOptions, DetectionResults};
 use console::{style, Term};
 use std::error::Error;
 use std::io::Write;
 
-pub fn detect_keyframes(opts: &CliOptions) -> Result<Vec<usize>, Box<dyn Error>> {
+pub fn detect_keyframes(opts: &CliOptions) -> Result<DetectionResults, Box<dyn Error>> {
     let report_progress = |frames: usize, _kf: usize| {
         let mut term_err = Term::stderr();
         term_err.clear_line().unwrap();
@@ -20,7 +20,7 @@ pub fn detect_keyframes(opts: &CliOptions) -> Result<Vec<usize>, Box<dyn Error>>
     let _ = write!(term_err, "{} scene cuts...", style("Analyzing").yellow());
 
     let sc_opts = DetectionOptions {
-        use_chroma: opts.speed < 10,
+        fast_analysis: opts.speed >= 10,
         ignore_flashes: false,
         lookahead_distance: 5,
         min_scenecut_distance: Some(opts.min_keyint as usize),
@@ -43,18 +43,4 @@ pub fn detect_keyframes(opts: &CliOptions) -> Result<Vec<usize>, Box<dyn Error>>
     } else {
         detect_scene_changes::<_, u16>(&mut dec, sc_opts)
     })
-}
-
-pub fn get_total_frame_count(opts: &CliOptions) -> Result<usize, Box<dyn Error>> {
-    let mut reader = if let Some(fast_fp) = opts.first_pass_input {
-        fast_fp.as_reader()?
-    } else {
-        opts.input.as_reader()?
-    };
-    let mut dec = y4m::decode(&mut reader).expect("input is not a y4m file");
-    let mut count = 0;
-    while dec.read_frame().is_ok() {
-        count += 1;
-    }
-    Ok(count)
 }

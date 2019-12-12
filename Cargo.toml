@@ -9,7 +9,7 @@ description = "A tool to parallel encode GOP segments of a video with rav1e"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-av-scenechange = { version = "0.3", default-features = false, features = ["serde"] }
+av-scenechange = { git = "https://github.com/rust-av/av-scenechange", branch = "massive-overhaul", default-features = false, features = ["serde"] }
 clap = "2"
 ivf = "0.1"
 num_cpus = "1"
