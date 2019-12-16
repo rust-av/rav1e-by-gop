@@ -4,6 +4,7 @@ use crate::CliOptions;
 use console::Term;
 use err_derive::Error;
 use rav1e::prelude::*;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp;
 use std::error::Error;
 use std::fmt;
@@ -11,7 +12,7 @@ use std::fs::remove_file;
 use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
@@ -23,6 +24,7 @@ pub fn perform_encode(
     keyframes: &[usize],
     total_frames: usize,
     opts: &CliOptions,
+    progress: Option<ProgressInfo>,
 ) -> Result<(), Box<dyn Error>> {
     let mut reader = opts.input.as_reader()?;
     let mut dec = y4m::decode(&mut reader).expect("input is not a y4m file");
@@ -47,13 +49,18 @@ pub fn perform_encode(
 
     let progress_pool = Arc::new(Mutex::new((
         vec![false; num_threads],
-        ProgressInfo::new(
-            Rational {
-                num: video_info.time_base.den,
-                den: video_info.time_base.num,
-            },
-            total_frames,
-        ),
+        if let Some(progress) = progress {
+            progress
+        } else {
+            ProgressInfo::new(
+                Rational {
+                    num: video_info.time_base.den,
+                    den: video_info.time_base.num,
+                },
+                total_frames,
+                keyframes.to_vec(),
+            )
+        },
     )));
     let mut current_frameno = 0;
     let mut iter = keyframes.iter().enumerate().peekable();
@@ -82,6 +89,7 @@ pub fn perform_encode(
                 keyframes.len(),
                 progress_slot,
                 progress_pool.clone(),
+                pool_lock.1.completed_segments.contains(&(idx + 1)),
             )?;
         } else {
             encode_segment::<u16, _>(
@@ -96,6 +104,7 @@ pub fn perform_encode(
                 keyframes.len(),
                 progress_slot,
                 progress_pool.clone(),
+                pool_lock.1.completed_segments.contains(&(idx + 1)),
             )?;
         }
     }
@@ -124,6 +133,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
     segment_count: usize,
     progress_slot: usize,
     progress_pool: Arc<Mutex<(Vec<bool>, ProgressInfo)>>,
+    skip: bool,
 ) -> Result<(), Box<dyn Error>> {
     let mut term_err = Term::stderr();
     if term_err.is_term() {
@@ -150,6 +160,10 @@ fn encode_segment<T: Pixel, D: Decoder>(
         }
     }
 
+    if skip {
+        return Ok(());
+    }
+
     let mut cfg = Config {
         enc: EncoderConfig::with_speed_preset(opts.speed),
         threads: 1,
@@ -166,7 +180,6 @@ fn encode_segment<T: Pixel, D: Decoder>(
     cfg.enc.tiles = 1;
     cfg.enc.speed_settings.no_scene_detection = true;
 
-    let out_filename = opts.output.to_string();
     if term_err.is_term() {
         term_err
             .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
@@ -180,12 +193,14 @@ fn encode_segment<T: Pixel, D: Decoder>(
         );
     }
 
+    let output_file = opts.output.to_owned();
+
     thread_pool.execute(move || {
         let source = Source {
             frames,
             sent_count: 0,
         };
-        let mut output = create_muxer(&get_segment_output_filename(&out_filename, segment_idx))
+        let mut output = create_muxer(&get_segment_output_filename(&output_file, segment_idx))
             .expect("Failed to create segment output");
         let progress = do_encode(
             cfg,
@@ -204,6 +219,16 @@ fn encode_segment<T: Pixel, D: Decoder>(
             .frame_info
             .extend_from_slice(&progress.frame_info);
         total_progress.encoded_size += progress.encoded_size;
+        total_progress.completed_segments.push(segment_idx);
+
+        // Update resume file
+        let progress_file = File::create(get_progress_filename(&output_file))
+            .expect("Failed to open progress file");
+        serde_json::to_writer(
+            progress_file,
+            &SerializableProgressInfo::from(&*total_progress),
+        )
+        .expect("Failed to write to progress file");
 
         if term_err.is_term() {
             term_err.move_cursor_to(0, 4).unwrap();
@@ -219,18 +244,16 @@ fn encode_segment<T: Pixel, D: Decoder>(
     Ok(())
 }
 
-fn get_segment_output_filename(output: &str, segment_idx: usize) -> String {
-    Path::new(output)
-        .with_extension(&format!("part{}.ivf", segment_idx))
-        .to_string_lossy()
-        .to_string()
+fn get_segment_output_filename(output: &Path, segment_idx: usize) -> PathBuf {
+    output.with_extension(&format!("part{}.ivf", segment_idx))
 }
 
-fn get_segment_list_filename(output: &str) -> String {
-    Path::new(output)
-        .with_extension("segments.txt")
-        .to_string_lossy()
-        .to_string()
+fn get_segment_list_filename(output: &Path) -> PathBuf {
+    output.with_extension("segments.txt")
+}
+
+pub fn get_progress_filename(output: &Path) -> PathBuf {
+    output.with_extension("progress.json")
 }
 
 fn do_encode<T: Pixel>(
@@ -249,6 +272,8 @@ fn do_encode<T: Pixel>(
             den: video_info.time_base.num,
         },
         source.frames.len(),
+        // Don't care about keyframes for the per-segment progress info
+        Vec::new(),
     );
 
     output.write_header(
@@ -350,28 +375,34 @@ fn process_frame<T: Pixel>(
 #[derive(Debug, Clone)]
 pub struct ProgressInfo {
     // Frame rate of the video
-    frame_rate: Rational,
+    pub frame_rate: Rational,
     // The length of the whole video, in frames
-    total_frames: usize,
+    pub total_frames: usize,
     // The time the encode was started
-    time_started: Instant,
+    // FIXME: This will be broken for resumed encodes
+    pub time_started: Instant,
     // List of frames encoded so far
-    frame_info: Vec<FrameSummary>,
+    pub frame_info: Vec<FrameSummary>,
     // Video size so far in bytes.
     //
     // This value will be updated in the CLI very frequently, so we cache the previous value
     // to reduce the overall complexity.
-    encoded_size: usize,
+    pub encoded_size: usize,
+    // The below are used for resume functionality
+    pub keyframes: Vec<usize>,
+    pub completed_segments: Vec<usize>,
 }
 
 impl ProgressInfo {
-    pub fn new(frame_rate: Rational, total_frames: usize) -> Self {
+    pub fn new(frame_rate: Rational, total_frames: usize, keyframes: Vec<usize>) -> Self {
         Self {
             frame_rate,
             total_frames,
             time_started: Instant::now(),
             frame_info: Vec::with_capacity(total_frames),
             encoded_size: 0,
+            keyframes,
+            completed_segments: Vec::new(),
         }
     }
 
@@ -496,6 +527,47 @@ fn secs_to_human_time(mut secs: u64, always_show_hours: bool) -> String {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializableProgressInfo {
+    frame_rate: (u64, u64),
+    total_frames: usize,
+    frame_info: Vec<SerializableFrameSummary>,
+    encoded_size: usize,
+    keyframes: Vec<usize>,
+    completed_segments: Vec<usize>,
+}
+
+impl From<&ProgressInfo> for SerializableProgressInfo {
+    fn from(other: &ProgressInfo) -> Self {
+        SerializableProgressInfo {
+            frame_rate: (other.frame_rate.num, other.frame_rate.den),
+            total_frames: other.total_frames,
+            frame_info: other
+                .frame_info
+                .iter()
+                .map(SerializableFrameSummary::from)
+                .collect(),
+            encoded_size: other.encoded_size,
+            keyframes: other.keyframes.clone(),
+            completed_segments: other.completed_segments.clone(),
+        }
+    }
+}
+
+impl From<&SerializableProgressInfo> for ProgressInfo {
+    fn from(other: &SerializableProgressInfo) -> Self {
+        ProgressInfo {
+            frame_rate: Rational::new(other.frame_rate.0, other.frame_rate.1),
+            total_frames: other.total_frames,
+            frame_info: other.frame_info.iter().map(FrameSummary::from).collect(),
+            encoded_size: other.encoded_size,
+            keyframes: other.keyframes.clone(),
+            completed_segments: other.completed_segments.clone(),
+            time_started: Instant::now(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct FrameSummary {
     /// Frame size in bytes
@@ -517,7 +589,63 @@ impl<T: Pixel> From<Packet<T>> for FrameSummary {
     }
 }
 
-fn mux_output_files(out_filename: &str, num_segments: usize) -> Result<(), Box<dyn Error>> {
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SerializableFrameSummary {
+    pub size: usize,
+    pub input_frameno: u64,
+    pub frame_type: u8,
+    pub qp: u8,
+}
+
+impl From<&FrameSummary> for SerializableFrameSummary {
+    fn from(summary: &FrameSummary) -> Self {
+        SerializableFrameSummary {
+            size: summary.size,
+            input_frameno: summary.input_frameno,
+            frame_type: summary.frame_type as u8,
+            qp: summary.qp,
+        }
+    }
+}
+
+impl From<&SerializableFrameSummary> for FrameSummary {
+    fn from(summary: &SerializableFrameSummary) -> Self {
+        FrameSummary {
+            size: summary.size,
+            input_frameno: summary.input_frameno,
+            frame_type: match summary.frame_type {
+                0 => FrameType::KEY,
+                1 => FrameType::INTER,
+                2 => FrameType::INTRA_ONLY,
+                3 => FrameType::SWITCH,
+                _ => unreachable!(),
+            },
+            qp: summary.qp,
+        }
+    }
+}
+
+impl Serialize for FrameSummary {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let ser = SerializableFrameSummary::from(self);
+        ser.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FrameSummary {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let de = SerializableFrameSummary::deserialize(deserializer)?;
+        Ok(FrameSummary::from(&de))
+    }
+}
+
+fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<dyn Error>> {
     let segments = (1..=num_segments)
         .map(|seg_idx| get_segment_output_filename(out_filename, seg_idx))
         .collect::<Vec<_>>();
@@ -526,7 +654,7 @@ fn mux_output_files(out_filename: &str, num_segments: usize) -> Result<(), Box<d
         let segments_file = File::create(&segments_filename)?;
         let mut writer = BufWriter::new(&segments_file);
         for segment in &segments {
-            writer.write_all(format!("file '{}'\n", segment).as_bytes())?;
+            writer.write_all(format!("file '{}'\n", segment.to_str().unwrap()).as_bytes())?;
         }
         segments_file.sync_all()?;
     }
@@ -552,6 +680,7 @@ fn mux_output_files(out_filename: &str, num_segments: usize) -> Result<(), Box<d
     for segment in segments {
         let _ = remove_file(segment);
     }
+    let _ = remove_file(get_progress_filename(out_filename));
     Ok(())
 }
 

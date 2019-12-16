@@ -6,18 +6,20 @@ mod muxer;
 use self::analyze::detect_keyframes;
 use self::encode::perform_encode;
 use crate::analyze::get_total_frame_count;
+use crate::encode::{get_progress_filename, ProgressInfo, SerializableProgressInfo};
 use clap::{App, Arg, ArgMatches};
 use console::Term;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 #[derive(Debug, Clone, Copy)]
 pub struct CliOptions<'a> {
     input: Input<'a>,
     first_pass_input: Option<Input<'a>>,
-    output: &'a str,
+    output: &'a Path,
     speed: usize,
     qp: usize,
     min_keyint: u64,
@@ -31,10 +33,10 @@ impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
             input: if matches.is_present("PIPED_INPUT") {
                 Input::Pipe(matches.value_of("INPUT").unwrap())
             } else {
-                Input::File(matches.value_of("INPUT").unwrap())
+                Input::File(Path::new(matches.value_of("INPUT").unwrap()))
             },
             first_pass_input: matches.value_of("FAST_ANALYSIS").map(Input::Pipe),
-            output: matches.value_of("OUTPUT").unwrap(),
+            output: Path::new(matches.value_of("OUTPUT").unwrap()),
             speed: matches.value_of("SPEED").unwrap().parse().unwrap(),
             qp: matches.value_of("QP").unwrap().parse().unwrap(),
             min_keyint: matches.value_of("MIN_KEYINT").unwrap().parse().unwrap(),
@@ -48,7 +50,7 @@ impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Input<'a> {
-    File(&'a str),
+    File(&'a Path),
     Pipe(&'a str),
 }
 
@@ -163,20 +165,84 @@ fn main() {
                 .long("threads")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("FORCE_RESUME")
+                .help("Resume any in-progress encodes without being prompted")
+                .long("resume")
+                .conflicts_with("FORCE_OVERWRITE"),
+        )
+        .arg(
+            Arg::with_name("FORCE_OVERWRITE")
+                .help("Overwrite any in-progress encodes without being prompted")
+                .long("overwrite")
+                .conflicts_with("FORCE_RESUME"),
+        )
         .get_matches();
     let opts = CliOptions::from(&matches);
     assert!(opts.output.ends_with(".ivf"), "Output must be a .ivf file");
 
     let term = Term::stderr();
+
+    let progress = if get_progress_filename(opts.output).is_file() {
+        let resume = if matches.is_present("FORCE_RESUME") {
+            true
+        } else if matches.is_present("FORCE_OVERWRITE") {
+            false
+        } else if term.is_term() {
+            let resolved;
+            loop {
+                let input = dialoguer::Input::<String>::new()
+                    .with_prompt("Found progress file for this encode. [R]esume or [O]verwrite?")
+                    .interact()
+                    .unwrap();
+                match input.to_lowercase().as_str() {
+                    "r" | "resume" => {
+                        resolved = true;
+                        break;
+                    }
+                    "o" | "overwrite" => {
+                        resolved = false;
+                        break;
+                    }
+                    _ => {
+                        eprintln!("Input not recognized");
+                    }
+                };
+            }
+            resolved
+        } else {
+            // Assume we want to resume if this is not a TTY
+            // and no CLI option is given
+            true
+        };
+        if resume {
+            let progress_file = File::open(get_progress_filename(opts.output))
+                .expect("Failed to open progress file");
+            let progress_input: SerializableProgressInfo = serde_json::from_reader(progress_file)
+                .expect("Progress file did not contain valid JSON");
+            Some(ProgressInfo::from(&progress_input))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     if term.is_term() {
         term.clear_screen().unwrap();
         term.move_cursor_to(0, 0).unwrap();
     }
 
-    let keyframes = detect_keyframes(&opts).expect("Failed to run keyframe detection");
-    let frame_count = get_total_frame_count(&opts).expect("Failed to get frame count");
+    let (keyframes, frame_count) = if let Some(ref progress) = progress {
+        (progress.keyframes.clone(), progress.total_frames)
+    } else {
+        (
+            detect_keyframes(&opts).expect("Failed to run keyframe detection"),
+            get_total_frame_count(&opts).expect("Failed to get frame count"),
+        )
+    };
 
     eprintln!("\nEncoding {} segments...", keyframes.len());
-    perform_encode(&keyframes, frame_count, &opts).expect("Failed encoding");
+    perform_encode(&keyframes, frame_count, &opts, progress).expect("Failed encoding");
     eprintln!("Finished!");
 }

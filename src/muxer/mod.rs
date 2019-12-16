@@ -30,19 +30,15 @@ pub trait Muxer {
     fn flush(&mut self) -> io::Result<()>;
 }
 
-pub fn create_muxer(path: &str) -> Result<Box<dyn Muxer>, Box<dyn Error>> {
-    if path == "-" {
-        return IvfMuxer::open(path);
-    }
-
-    let ext = Path::new(path)
+pub fn create_muxer(path: &Path) -> Result<Box<dyn Muxer>, Box<dyn Error>> {
+    let ext = path
         .extension()
         .and_then(OsStr::to_str)
         .map(str::to_lowercase)
         .unwrap_or_else(|| "ivf".into());
 
     match &ext[..] {
-        "ivf" => IvfMuxer::open(path),
+        "ivf" => IvfMuxer::open(path.to_str().unwrap()),
         _e => {
             panic!(
                 "{} is not a supported extension, please change to .ivf",

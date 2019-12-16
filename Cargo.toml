@@ -9,15 +9,18 @@ description = "A tool to parallel encode GOP segments of a video with rav1e"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-av-scenechange = { version = "0.3", default-features = false }
+av-scenechange = { version = "0.3", default-features = false, features = ["serde"] }
 clap = "2"
 err-derive = "0.2"
 ivf = "0.1"
 num_cpus = "1"
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm"] }
 console = "0.9.1"
+dialoguer = "0.5"
 threadpool = "1"
 y4m = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [profile.dev]
 opt-level = 2
