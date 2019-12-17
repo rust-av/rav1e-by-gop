@@ -179,7 +179,10 @@ fn main() {
         )
         .get_matches();
     let opts = CliOptions::from(&matches);
-    assert!(opts.output.ends_with(".ivf"), "Output must be a .ivf file");
+    assert!(
+        opts.output.extension().and_then(|ext| ext.to_str()) == Some("ivf"),
+        "Output must be a .ivf file"
+    );
 
     let term = Term::stderr();
 
