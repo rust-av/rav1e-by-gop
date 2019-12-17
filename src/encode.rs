@@ -579,7 +579,6 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
 pub struct FrameSummary {
     /// Frame size in bytes
     pub size: usize,
-    pub input_frameno: u64,
     pub frame_type: FrameType,
     /// QP selected for the frame.
     pub qp: u8,
@@ -589,7 +588,6 @@ impl<T: Pixel> From<Packet<T>> for FrameSummary {
     fn from(packet: Packet<T>) -> Self {
         Self {
             size: packet.data.len(),
-            input_frameno: packet.input_frameno,
             frame_type: packet.frame_type,
             qp: packet.qp,
         }
@@ -599,7 +597,6 @@ impl<T: Pixel> From<Packet<T>> for FrameSummary {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SerializableFrameSummary {
     pub size: usize,
-    pub input_frameno: u64,
     pub frame_type: u8,
     pub qp: u8,
 }
@@ -608,7 +605,6 @@ impl From<&FrameSummary> for SerializableFrameSummary {
     fn from(summary: &FrameSummary) -> Self {
         SerializableFrameSummary {
             size: summary.size,
-            input_frameno: summary.input_frameno,
             frame_type: summary.frame_type as u8,
             qp: summary.qp,
         }
@@ -619,7 +615,6 @@ impl From<&SerializableFrameSummary> for FrameSummary {
     fn from(summary: &SerializableFrameSummary) -> Self {
         FrameSummary {
             size: summary.size,
-            input_frameno: summary.input_frameno,
             frame_type: match summary.frame_type {
                 0 => FrameType::KEY,
                 1 => FrameType::INTER,
