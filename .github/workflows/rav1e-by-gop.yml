@@ -78,7 +78,7 @@ jobs:
       if: matrix.platform == 'windows-latest'
       run: |
         $VS="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise"
-        $COMPILER_SUBPATH="VC\Tools\MSVC\14.23.28105\bin\Hostx64\x64"
+        $COMPILER_SUBPATH="VC\Tools\MSVC\14.24.28314\bin\Hostx64\x64"
         echo "::add-path::$VS\$COMPILER_SUBPATH;C:\nasm"
     - name: Build
       run: cargo build --all-features --tests --benches
