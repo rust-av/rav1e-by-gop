@@ -52,16 +52,23 @@ pub fn perform_encode(
         if let Some(progress) = progress {
             progress
         } else {
-            ProgressInfo::new(
+            let progress = ProgressInfo::new(
                 Rational {
                     num: video_info.time_base.den,
                     den: video_info.time_base.num,
                 },
                 total_frames,
                 keyframes.to_vec(),
-            )
+            );
+
+            // Do an initial write of the progress file,
+            // so we don't need to redo keyframe search.
+            update_progress_file(opts.output, &progress);
+
+            progress
         },
     )));
+
     let mut current_frameno = 0;
     let mut iter = keyframes.iter().enumerate().peekable();
     while let Some((idx, &keyframe)) = iter.next() {
@@ -221,14 +228,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
         total_progress.encoded_size += progress.encoded_size;
         total_progress.completed_segments.push(segment_idx);
 
-        // Update resume file
-        let progress_file = File::create(get_progress_filename(&output_file))
-            .expect("Failed to open progress file");
-        serde_json::to_writer(
-            progress_file,
-            &SerializableProgressInfo::from(&*total_progress),
-        )
-        .expect("Failed to write to progress file");
+        update_progress_file(&output_file, &*total_progress);
 
         if term_err.is_term() {
             term_err.move_cursor_to(0, 4).unwrap();
@@ -242,6 +242,13 @@ fn encode_segment<T: Pixel, D: Decoder>(
         }
     });
     Ok(())
+}
+
+fn update_progress_file(output: &Path, progress: &ProgressInfo) {
+    let progress_file =
+        File::create(get_progress_filename(&output)).expect("Failed to open progress file");
+    serde_json::to_writer(progress_file, &SerializableProgressInfo::from(progress))
+        .expect("Failed to write to progress file");
 }
 
 fn get_segment_output_filename(output: &Path, segment_idx: usize) -> PathBuf {
