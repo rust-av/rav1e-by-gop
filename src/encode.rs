@@ -168,6 +168,8 @@ fn encode_segment<T: Pixel, D: Decoder>(
     }
 
     if skip {
+        let mut pool_lock = progress_pool.lock().unwrap();
+        pool_lock.0[progress_slot] = false;
         return Ok(());
     }
 
