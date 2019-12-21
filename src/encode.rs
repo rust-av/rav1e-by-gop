@@ -79,9 +79,14 @@ pub fn perform_encode(
         }
         let next_keyframe = iter.peek().map(|(_, next_fno)| **next_fno);
 
-        let mut pool_lock = progress_pool.lock().unwrap();
-        let progress_slot = pool_lock.0.iter().position(|slot| !*slot).unwrap();
-        pool_lock.0[progress_slot] = true;
+        let progress_slot;
+        let skip;
+        {
+            let mut pool_lock = progress_pool.lock().unwrap();
+            progress_slot = pool_lock.0.iter().position(|slot| !*slot).unwrap();
+            pool_lock.0[progress_slot] = true;
+            skip = pool_lock.1.completed_segments.contains(&(idx + 1));
+        }
 
         if video_info.bit_depth == 8 {
             encode_segment::<u8, _>(
@@ -96,7 +101,7 @@ pub fn perform_encode(
                 keyframes.len(),
                 progress_slot,
                 progress_pool.clone(),
-                pool_lock.1.completed_segments.contains(&(idx + 1)),
+                skip,
             )?;
         } else {
             encode_segment::<u16, _>(
@@ -111,7 +116,7 @@ pub fn perform_encode(
                 keyframes.len(),
                 progress_slot,
                 progress_pool.clone(),
-                pool_lock.1.completed_segments.contains(&(idx + 1)),
+                skip,
             )?;
         }
     }
@@ -170,6 +175,12 @@ fn encode_segment<T: Pixel, D: Decoder>(
     if skip {
         let mut pool_lock = progress_pool.lock().unwrap();
         pool_lock.0[progress_slot] = false;
+        if term_err.is_term() {
+            term_err
+                .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
+                .unwrap();
+            term_err.clear_line().unwrap();
+        }
         return Ok(());
     }
 
