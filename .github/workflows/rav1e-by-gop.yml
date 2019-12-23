@@ -77,9 +77,15 @@ jobs:
     - name: Set environment variables
       if: matrix.platform == 'windows-latest'
       run: |
-        $VS="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise"
-        $COMPILER_SUBPATH="VC\Tools\MSVC\14.24.28314\bin\Hostx64\x64"
-        echo "::add-path::$VS\$COMPILER_SUBPATH;C:\nasm"
+        $VsPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+        echo "::add-path::$VsPath;C:\nasm"
+    - name: Set MSVC x86_64 linker path
+      if: matrix.platform == 'windows-latest'
+      run: |
+        $LinkGlob = "VC\Tools\MSVC\*\bin\Hostx64\x64"
+        $LinkPath = vswhere -latest -products * -find "$LinkGlob" |
+                    Select-Object -Last 1
+        echo "::add-path::$LinkPath"
     - name: Build
       run: cargo build --all-features --tests --benches
     - name: Run tests
