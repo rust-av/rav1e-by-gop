@@ -1,13 +1,12 @@
 use crate::decode::{Decoder, VideoDetails};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
-use console::Term;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use err_derive::Error;
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rav1e::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
-use std::fmt;
 use std::fs::remove_file;
 use std::fs::File;
 use std::io::BufWriter;
@@ -442,6 +441,7 @@ impl ProgressInfo {
     }
 
     pub fn print_summary(&self) {
+        eprintln!("{}", self.end_of_encode_progress());
         self.print_frame_type_summary(FrameType::KEY);
         self.print_frame_type_summary(FrameType::INTER);
         self.print_frame_type_summary(FrameType::INTRA_ONLY);
@@ -460,19 +460,33 @@ impl ProgressInfo {
             size
         );
     }
-}
 
-impl fmt::Display for ProgressInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}/{} frames, {:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, est. time: {}",
-            self.frames_encoded(),
-            self.total_frames,
+    fn progress(&self) -> String {
+        format!(
+            "{:.2} fps, {:.1} Kb/s, ETA: {}",
+            self.encoding_fps(),
+            self.bitrate() as f64 / 1000f64,
+            secs_to_human_time(self.estimated_time(), false)
+        )
+    }
+
+    fn progress_verbose(&self) -> String {
+        format!(
+            "{:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, ETA: {}",
             self.encoding_fps(),
             self.bitrate() as f64 / 1000f64,
             self.estimated_size() as f64 / (1024 * 1024) as f64,
             secs_to_human_time(self.estimated_time(), false)
+        )
+    }
+
+    fn end_of_encode_progress(&self) -> String {
+        format!(
+            "{:.3} fps, {:.2} Kb/s, size: {:.2} MB, elapsted time: {}",
+            self.encoding_fps(),
+            self.bitrate() as f64 / 1000f64,
+            self.estimated_size() as f64 / (1024 * 1024) as f64,
+            secs_to_human_time(self.elapsed_time() as u64, true)
         )
     }
 }
@@ -648,47 +662,53 @@ fn watch_progress_receivers(
     output_file: PathBuf,
     mut overall_progress: ProgressInfo,
 ) {
-    let mut term_err = Term::stderr();
-    if term_err.is_term() {
-        for _ in 0..(receivers.len() + 1) {
-            let _ = writeln!(term_err);
-        }
-        let _ = term_err.move_cursor_up(receivers.len() + 1);
-    }
+    let segments_pb_holder = MultiProgress::new();
+    let main_pb = segments_pb_holder.add(ProgressBar::new(overall_progress.total_frames as u64));
+    main_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:32.cyan/blue} Frame {pos:>7}/{len:7} {wide_msg}")
+            .progress_chars("##-"),
+    );
+    let segment_pbs = (0..receivers.len())
+        .map(|_| {
+            let pb = segments_pb_holder.add(ProgressBar::hidden());
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("[{prefix}] [{elapsed_precise}] {bar:32} {pos:>4}/{len:4} {wide_msg}")
+                    .progress_chars("##-"),
+            );
+            pb
+        })
+        .collect::<Vec<ProgressBar>>();
 
     let segment_count = overall_progress.keyframes.len();
     let mut last_segments_completed = 0;
     loop {
         for (slot, rx) in receivers.iter().enumerate() {
-            let term_err = Term::stderr();
-            if term_err.is_term() {
-                let _ = term_err.move_cursor_down(1);
-            }
-            if let Some(msg) = rx.try_iter().last() {
+            while let Ok(msg) = rx.try_recv() {
                 let segment_idx = msg.as_ref().map(|msg| msg.segment_idx).unwrap_or(0);
-                output_progress(
+                update_progress(
                     msg,
                     &mut overall_progress,
                     segment_idx,
                     segment_count,
                     slots.clone(),
                     slot,
+                    &segment_pbs[slot],
                 );
             }
         }
-        if term_err.is_term() {
-            let _ = term_err.move_cursor_up(receivers.len());
-        }
         if overall_progress.completed_segments.len() != last_segments_completed {
             last_segments_completed = overall_progress.completed_segments.len();
-            output_overall_progress(&output_file, &overall_progress);
+            update_overall_progress(&output_file, &overall_progress, &main_pb);
 
             if overall_progress.completed_segments.len() == overall_progress.keyframes.len() {
                 // Done encoding
-                if term_err.is_term() {
-                    let _ = term_err.move_cursor_down(receivers.len());
-                    let _ = term_err.clear_last_lines(receivers.len());
+                main_pb.finish();
+                for pb in &segment_pbs {
+                    pb.finish();
                 }
+                let _ = segments_pb_holder.join_and_clear();
                 overall_progress.print_summary();
                 break;
             }
@@ -697,13 +717,14 @@ fn watch_progress_receivers(
     }
 }
 
-fn output_progress(
+fn update_progress(
     progress: Option<ProgressInfo>,
     overall_progress: &mut ProgressInfo,
     segment_idx: usize,
     segment_count: usize,
     slots: Arc<Mutex<Vec<bool>>>,
     slot_idx: usize,
+    pb: &ProgressBar,
 ) {
     if let Some(ref progress) = progress {
         if progress.total_frames > 0 && progress.total_frames == progress.frame_info.len() {
@@ -713,50 +734,30 @@ fn output_progress(
             overall_progress.encoded_size += progress.encoded_size;
             overall_progress.completed_segments.push(segment_idx);
             slots.lock().unwrap()[slot_idx] = false;
+            pb.set_draw_target(ProgressDrawTarget::hidden());
         }
     }
 
-    let mut term_err = Term::stderr();
-    if term_err.is_term() {
-        let _ = term_err.clear_line();
-        if let Some(ref progress) = progress {
-            if progress.total_frames == 0 {
-                let _ = writeln!(
-                    term_err,
-                    "[00:00:00] Segment {}/{}: Starting...",
-                    segment_idx, segment_count,
-                );
-            } else if progress.frame_info.is_empty() {
-                let _ = writeln!(
-                    term_err,
-                    "[00:00:00] Segment {}/{}: Starting ({} frames)...",
-                    segment_idx, segment_count, progress.total_frames,
-                );
-            } else {
-                let _ = write!(
-                    term_err,
-                    "[{}] Segment {}/{}: {}",
-                    secs_to_human_time(progress.elapsed_time() as u64, true),
-                    segment_idx,
-                    segment_count,
-                    progress
-                );
-            }
+    if let Some(ref progress) = progress {
+        if progress.total_frames == 0 {
+            pb.set_draw_target(ProgressDrawTarget::stderr());
+            pb.set_length(0);
+            pb.set_prefix(&format!("{}/{}", segment_idx, segment_count,));
+            pb.set_message("Starting...");
+        } else if progress.frame_info.is_empty() {
+            pb.set_length(progress.total_frames as u64);
+        } else {
+            pb.set_position(progress.frame_info.len() as u64);
+            pb.set_message(&format!("{}", progress.progress()));
         }
     }
 }
 
-fn output_overall_progress(output_file: &Path, overall_progress: &ProgressInfo) {
+fn update_overall_progress(output_file: &Path, overall_progress: &ProgressInfo, pb: &ProgressBar) {
     update_progress_file(output_file, &overall_progress);
 
-    let mut term_err = Term::stderr();
-    let _ = term_err.clear_line();
-    let _ = writeln!(
-        term_err,
-        "[{}] Progress: {}",
-        secs_to_human_time(overall_progress.elapsed_time() as u64, true),
-        overall_progress
-    );
+    pb.set_position(overall_progress.frame_info.len() as u64);
+    pb.set_message(&overall_progress.progress_verbose());
 }
 
 #[derive(Debug, Clone, Error)]
