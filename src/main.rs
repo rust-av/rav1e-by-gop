@@ -236,11 +236,6 @@ fn main() {
         None
     };
 
-    if term.is_term() {
-        term.clear_screen().unwrap();
-        term.move_cursor_to(0, 0).unwrap();
-    }
-
     let (keyframes, frame_count) = if let Some(ref progress) = progress {
         (progress.keyframes.clone(), progress.total_frames)
     } else {
