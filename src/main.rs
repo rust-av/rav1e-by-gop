@@ -183,6 +183,11 @@ fn main() {
         opts.output.extension().and_then(|ext| ext.to_str()) == Some("ivf"),
         "Output must be a .ivf file"
     );
+    assert!(
+        opts.max_keyint >= opts.min_keyint,
+        "Max keyint must be greater than or equal to min keyint"
+    );
+    assert!(opts.qp <= 255, "QP must be between 0-255");
 
     let term = Term::stderr();
 
