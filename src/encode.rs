@@ -733,6 +733,8 @@ fn update_progress(
             pb.set_style(progress_active_style());
             pb.set_prefix(&format!("{:>4}/{}", segment_idx, segment_count));
             pb.reset_elapsed();
+            pb.set_position(0);
+            pb.set_length(0);
         } else if progress.frame_info.is_empty() {
             // Frames loaded for new segment
             pb.set_length(progress.total_frames as u64);
