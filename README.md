@@ -16,6 +16,7 @@ is still `O(n)` where n is the number of threads.
 You probably want to have at least 2GB of RAM
 per encoder thread, e.g. if you are running 16 threads,
 32GB of RAM is the recommended minimum.
+Memory requirements may be even higher for e.g. 4k or 10-bit content.
 
 ## Dependencies
 
