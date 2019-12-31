@@ -732,7 +732,7 @@ fn update_progress(
             // New segment starting
             pb.set_style(progress_active_style());
             pb.set_prefix(&format!("{:>4}/{}", segment_idx, segment_count));
-            pb.set_message("Starting...");
+            pb.reset_elapsed();
         } else if progress.frame_info.is_empty() {
             // Frames loaded for new segment
             pb.set_length(progress.total_frames as u64);
@@ -748,7 +748,7 @@ fn update_progress(
             pb.set_style(progress_idle_style());
             pb.set_prefix("Idle");
             pb.set_message("");
-            pb.set_position(0);
+            pb.reset_elapsed();
             pb.set_length(0);
         } else {
             // Normal tick
@@ -761,7 +761,7 @@ fn update_progress(
         pb.set_style(progress_idle_style());
         pb.set_prefix("Idle");
         pb.set_message("");
-        pb.set_position(0);
+        pb.reset_elapsed();
         pb.set_length(0);
     }
 }
@@ -780,7 +780,7 @@ pub enum EncodeError {
 }
 
 fn progress_idle_style() -> ProgressStyle {
-    ProgressStyle::default_spinner().template("[{prefix}] {wide_msg}")
+    ProgressStyle::default_spinner().template("[{prefix}]")
 }
 
 fn main_progress_style() -> ProgressStyle {
