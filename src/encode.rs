@@ -472,7 +472,7 @@ impl ProgressInfo {
 
     fn progress_verbose(&self) -> String {
         format!(
-            "{:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, ETA {}",
+            "{:.2} fps, {:.1} Kb/s, est. {:.2} MB, {}",
             self.encoding_fps(),
             self.bitrate() as f64 / 1000f64,
             self.estimated_size() as f64 / (1024 * 1024) as f64,
@@ -672,6 +672,8 @@ fn watch_progress_receivers(
             let pb = segments_pb_holder.add(ProgressBar::new_spinner());
             pb.set_style(progress_idle_style());
             pb.set_prefix("Idle");
+            pb.set_position(0);
+            pb.set_length(0);
             pb
         })
         .collect::<Vec<ProgressBar>>();
@@ -728,11 +730,11 @@ fn update_progress(
     if let Some(ref progress) = progress {
         if progress.total_frames == 0 {
             // New segment starting
+            pb.set_style(progress_active_style());
             pb.set_prefix(&format!("{:>4}/{}", segment_idx, segment_count));
             pb.set_message("Starting...");
         } else if progress.frame_info.is_empty() {
             // Frames loaded for new segment
-            pb.set_style(progress_active_style());
             pb.set_length(progress.total_frames as u64);
         } else if progress.total_frames == progress.frame_info.len() {
             // Segment complete
