@@ -14,6 +14,8 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CliOptions<'a> {
@@ -236,11 +238,6 @@ fn main() {
         None
     };
 
-    if term.is_term() {
-        term.clear_screen().unwrap();
-        term.move_cursor_to(0, 0).unwrap();
-    }
-
     let (keyframes, frame_count) = if let Some(ref progress) = progress {
         (progress.keyframes.clone(), progress.total_frames)
     } else {
@@ -252,5 +249,9 @@ fn main() {
 
     eprintln!("\nEncoding {} segments...", keyframes.len());
     perform_encode(&keyframes, frame_count, &opts, progress).expect("Failed encoding");
+
+    // Allow the progress indicator thread
+    // enough time to output the end-of-encode stats
+    thread::sleep(Duration::from_millis(3000));
     eprintln!("Finished!");
 }

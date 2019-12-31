@@ -1,13 +1,13 @@
 use crate::decode::{Decoder, VideoDetails};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
-use console::Term;
+use console::Style;
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use err_derive::Error;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rav1e::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::cmp;
 use std::error::Error;
-use std::fmt;
 use std::fs::remove_file;
 use std::fs::File;
 use std::io::BufWriter;
@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use std::time::Instant;
+use std::{cmp, thread};
 use threadpool::ThreadPool;
 
 pub fn perform_encode(
@@ -45,48 +46,60 @@ pub fn perform_encode(
     }
     let mut thread_pool = ThreadPool::new(num_threads);
     eprintln!("Using {} encoder threads", num_threads);
-    eprintln!("[00:00:00] Starting encode...");
 
-    let progress_pool = Arc::new(Mutex::new((
-        vec![false; num_threads],
-        if let Some(progress) = progress {
-            progress
-        } else {
-            let progress = ProgressInfo::new(
-                Rational {
-                    num: video_info.time_base.den,
-                    den: video_info.time_base.num,
-                },
-                total_frames,
-                keyframes.to_vec(),
-            );
+    let overall_progress = if let Some(progress) = progress {
+        progress
+    } else {
+        let progress = ProgressInfo::new(
+            Rational {
+                num: video_info.time_base.den,
+                den: video_info.time_base.num,
+            },
+            total_frames,
+            keyframes.to_vec(),
+            0,
+        );
 
-            // Do an initial write of the progress file,
-            // so we don't need to redo keyframe search.
-            update_progress_file(opts.output, &progress);
+        // Do an initial write of the progress file,
+        // so we don't need to redo keyframe search.
+        update_progress_file(opts.output, &progress);
 
-            progress
-        },
-    )));
+        progress
+    };
+    let channels: Vec<ProgressChannel> = (0..num_threads).map(|_| unbounded()).collect();
+    let slots: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![false; num_threads]));
+
+    let keyframes = overall_progress.keyframes.clone();
+    let skipped_segments = overall_progress.completed_segments.clone();
+    let output_file = opts.output.to_owned();
+    let receivers = channels
+        .iter()
+        .map(|(_, rx)| rx.clone())
+        .collect::<Vec<_>>();
+    let slots_ref = slots.clone();
+    thread::spawn(move || {
+        watch_progress_receivers(receivers, slots_ref, output_file, overall_progress);
+    });
 
     let mut current_frameno = 0;
     let mut iter = keyframes.iter().enumerate().peekable();
     while let Some((idx, &keyframe)) = iter.next() {
-        while thread_pool.active_count() + thread_pool.queued_count() == num_threads {
+        let mut open_slot;
+        loop {
             // Loading frames costs a significant amount of memory,
             // so don't load frames until we're ready to encode them.
+            open_slot = slots.lock().unwrap().iter().position(|slot| !*slot);
+            if open_slot.is_some() {
+                break;
+            }
+
             sleep(Duration::from_millis(250));
         }
         let next_keyframe = iter.peek().map(|(_, next_fno)| **next_fno);
 
-        let progress_slot;
-        let skip;
-        {
-            let mut pool_lock = progress_pool.lock().unwrap();
-            progress_slot = pool_lock.0.iter().position(|slot| !*slot).unwrap();
-            pool_lock.0[progress_slot] = true;
-            skip = pool_lock.1.completed_segments.contains(&(idx + 1));
-        }
+        let slot = open_slot.unwrap();
+        slots.lock().unwrap()[slot] = true;
+        let skip = skipped_segments.contains(&(idx + 1));
 
         if video_info.bit_depth == 8 {
             encode_segment::<u8, _>(
@@ -98,9 +111,7 @@ pub fn perform_encode(
                 &mut current_frameno,
                 &mut thread_pool,
                 idx + 1,
-                keyframes.len(),
-                progress_slot,
-                progress_pool.clone(),
+                channels[slot].0.clone(),
                 skip,
             )?;
         } else {
@@ -113,20 +124,13 @@ pub fn perform_encode(
                 &mut current_frameno,
                 &mut thread_pool,
                 idx + 1,
-                keyframes.len(),
-                progress_slot,
-                progress_pool.clone(),
+                channels[slot].0.clone(),
                 skip,
             )?;
         }
     }
     thread_pool.join();
-    let term_err = Term::stderr();
-    if term_err.is_term() {
-        term_err.move_cursor_to(0, 5).unwrap();
-    }
-    let pool_lock = progress_pool.lock().unwrap();
-    pool_lock.1.print_summary();
+
     mux_output_files(opts.output, keyframes.len())?;
 
     Ok(())
@@ -142,22 +146,18 @@ fn encode_segment<T: Pixel, D: Decoder>(
     current_frameno: &mut usize,
     thread_pool: &mut ThreadPool,
     segment_idx: usize,
-    segment_count: usize,
-    progress_slot: usize,
-    progress_pool: Arc<Mutex<(Vec<bool>, ProgressInfo)>>,
+    progress_sender: ProgressSender,
     skip: bool,
 ) -> Result<(), Box<dyn Error>> {
-    let mut term_err = Term::stderr();
-    if term_err.is_term() {
-        term_err
-            .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
-            .unwrap();
-        let _ = writeln!(
-            term_err,
-            "[00:00:00] Segment {}/{}: Starting...",
-            segment_idx, segment_count,
-        );
-    }
+    let _ = progress_sender.send(Some(ProgressInfo::new(
+        Rational {
+            num: video_info.time_base.den,
+            den: video_info.time_base.num,
+        },
+        0,
+        vec![],
+        segment_idx,
+    )));
 
     let mut frames = Vec::with_capacity(next_keyframe.map(|next| next - keyframe).unwrap_or(0));
     while next_keyframe
@@ -173,14 +173,7 @@ fn encode_segment<T: Pixel, D: Decoder>(
     }
 
     if skip {
-        let mut pool_lock = progress_pool.lock().unwrap();
-        pool_lock.0[progress_slot] = false;
-        if term_err.is_term() {
-            term_err
-                .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
-                .unwrap();
-            term_err.clear_line().unwrap();
-        }
+        let _ = progress_sender.send(None);
         return Ok(());
     }
 
@@ -200,19 +193,6 @@ fn encode_segment<T: Pixel, D: Decoder>(
     cfg.enc.tiles = 1;
     cfg.enc.speed_settings.no_scene_detection = true;
 
-    if term_err.is_term() {
-        term_err
-            .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
-            .unwrap();
-        let _ = writeln!(
-            term_err,
-            "[00:00:00] Segment {}/{}: Starting ({} frames)...",
-            segment_idx,
-            segment_count,
-            frames.len()
-        );
-    }
-
     let output_file = opts.output.to_owned();
 
     thread_pool.execute(move || {
@@ -220,39 +200,15 @@ fn encode_segment<T: Pixel, D: Decoder>(
             frames,
             sent_count: 0,
         };
-        let mut output = create_muxer(&get_segment_output_filename(&output_file, segment_idx))
-            .expect("Failed to create segment output");
-        let progress = do_encode(
+        do_encode(
             cfg,
             video_info,
             source,
-            &mut *output,
+            output_file,
             segment_idx,
-            segment_count,
-            progress_slot,
+            progress_sender,
         )
         .expect("Failed encoding segment");
-        let mut pool_lock = progress_pool.lock().unwrap();
-        pool_lock.0[progress_slot] = false;
-        let total_progress = &mut pool_lock.1;
-        total_progress
-            .frame_info
-            .extend_from_slice(&progress.frame_info);
-        total_progress.encoded_size += progress.encoded_size;
-        total_progress.completed_segments.push(segment_idx);
-
-        update_progress_file(&output_file, &*total_progress);
-
-        if term_err.is_term() {
-            term_err.move_cursor_to(0, 4).unwrap();
-            term_err.clear_line().unwrap();
-            let _ = writeln!(
-                term_err,
-                "[{}] Progress: {}",
-                secs_to_human_time(total_progress.elapsed_time() as u64, true),
-                total_progress
-            );
-        }
     });
     Ok(())
 }
@@ -280,10 +236,9 @@ fn do_encode<T: Pixel>(
     cfg: Config,
     video_info: VideoDetails,
     mut source: Source<T>,
-    output: &mut dyn Muxer,
+    output_file: PathBuf,
     segment_idx: usize,
-    segment_count: usize,
-    progress_slot: usize,
+    progress_sender: ProgressSender,
 ) -> Result<ProgressInfo, Box<dyn Error>> {
     let mut ctx: Context<T> = cfg.new_context()?;
     let mut progress = ProgressInfo::new(
@@ -294,8 +249,12 @@ fn do_encode<T: Pixel>(
         source.frames.len(),
         // Don't care about keyframes for the per-segment progress info
         Vec::new(),
+        segment_idx,
     );
+    let _ = progress_sender.send(Some(progress.clone()));
 
+    let mut output = create_muxer(&get_segment_output_filename(&output_file, segment_idx))
+        .expect("Failed to create segment output");
     output.write_header(
         video_info.width,
         video_info.height,
@@ -303,43 +262,14 @@ fn do_encode<T: Pixel>(
         cfg.enc.time_base.num as usize,
     );
 
-    let mut term_err = Term::stderr();
-
-    while let Some(frame_info) = process_frame(&mut ctx, &mut source, output)? {
+    while let Some(frame_info) = process_frame(&mut ctx, &mut source, &mut *output)? {
         for frame in frame_info {
             progress.add_frame(frame.clone());
         }
-        if term_err.is_term() && progress.frames_encoded() > 0 {
-            term_err
-                .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
-                .unwrap();
-            term_err.clear_line().unwrap();
-            let _ = write!(
-                term_err,
-                "[{}] Segment {}/{}: {}",
-                secs_to_human_time(progress.elapsed_time() as u64, true),
-                segment_idx,
-                segment_count,
-                progress
-            );
-        }
+        let _ = progress_sender.send(Some(progress.clone()));
         output.flush().unwrap();
     }
-    if !term_err.is_term() {
-        let _ = write!(
-            term_err,
-            "[{}] Segment {}/{}: {}",
-            secs_to_human_time(progress.elapsed_time() as u64, true),
-            segment_idx,
-            segment_count,
-            progress
-        );
-    } else {
-        term_err
-            .move_cursor_to(0, (progress_slot as u16 + 5) as usize)
-            .unwrap();
-        term_err.clear_line().unwrap();
-    }
+
     Ok(progress)
 }
 
@@ -392,6 +322,10 @@ fn process_frame<T: Pixel>(
     Ok(Some(frame_summaries))
 }
 
+type ProgressSender = Sender<Option<ProgressInfo>>;
+type ProgressReceiver = Receiver<Option<ProgressInfo>>;
+type ProgressChannel = (ProgressSender, ProgressReceiver);
+
 #[derive(Debug, Clone)]
 pub struct ProgressInfo {
     // Frame rate of the video
@@ -411,10 +345,16 @@ pub struct ProgressInfo {
     // The below are used for resume functionality
     pub keyframes: Vec<usize>,
     pub completed_segments: Vec<usize>,
+    pub segment_idx: usize,
 }
 
 impl ProgressInfo {
-    pub fn new(frame_rate: Rational, total_frames: usize, keyframes: Vec<usize>) -> Self {
+    pub fn new(
+        frame_rate: Rational,
+        total_frames: usize,
+        keyframes: Vec<usize>,
+        segment_idx: usize,
+    ) -> Self {
         Self {
             frame_rate,
             total_frames,
@@ -423,6 +363,7 @@ impl ProgressInfo {
             encoded_size: 0,
             keyframes,
             completed_segments: Vec::new(),
+            segment_idx,
         }
     }
 
@@ -500,6 +441,7 @@ impl ProgressInfo {
     }
 
     pub fn print_summary(&self) {
+        eprintln!("{}", self.end_of_encode_progress());
         self.print_frame_type_summary(FrameType::KEY);
         self.print_frame_type_summary(FrameType::INTER);
         self.print_frame_type_summary(FrameType::INTRA_ONLY);
@@ -518,19 +460,33 @@ impl ProgressInfo {
             size
         );
     }
-}
 
-impl fmt::Display for ProgressInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}/{} frames, {:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, est. time: {}",
-            self.frames_encoded(),
-            self.total_frames,
+    fn progress(&self) -> String {
+        format!(
+            "{:.2} fps, {:.1} Kb/s, ETA {}",
+            self.encoding_fps(),
+            self.bitrate() as f64 / 1000f64,
+            secs_to_human_time(self.estimated_time(), false)
+        )
+    }
+
+    fn progress_verbose(&self) -> String {
+        format!(
+            "{:.3} fps, {:.2} Kb/s, est. size: {:.2} MB, ETA {}",
             self.encoding_fps(),
             self.bitrate() as f64 / 1000f64,
             self.estimated_size() as f64 / (1024 * 1024) as f64,
             secs_to_human_time(self.estimated_time(), false)
+        )
+    }
+
+    fn end_of_encode_progress(&self) -> String {
+        format!(
+            "Elapsed time: {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
+            secs_to_human_time(self.elapsed_time() as u64, true),
+            self.encoding_fps(),
+            self.bitrate() as f64 / 1000f64,
+            self.estimated_size() as f64 / (1024 * 1024) as f64,
         )
     }
 }
@@ -584,6 +540,7 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
             keyframes: other.keyframes.clone(),
             completed_segments: other.completed_segments.clone(),
             time_started: Instant::now(),
+            segment_idx: 0,
         }
     }
 }
@@ -699,8 +656,139 @@ fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<
     Ok(())
 }
 
+fn watch_progress_receivers(
+    receivers: Vec<ProgressReceiver>,
+    slots: Arc<Mutex<Vec<bool>>>,
+    output_file: PathBuf,
+    mut overall_progress: ProgressInfo,
+) {
+    let segments_pb_holder = MultiProgress::new();
+    let main_pb = segments_pb_holder.add(ProgressBar::new(overall_progress.total_frames as u64));
+    main_pb.set_style(main_progress_style());
+    main_pb.set_prefix(&Style::new().blue().apply_to("Overall").to_string());
+    main_pb.set_position(0);
+    let segment_pbs = (0..receivers.len())
+        .map(|_| {
+            let pb = segments_pb_holder.add(ProgressBar::new_spinner());
+            pb.set_style(progress_idle_style());
+            pb.set_prefix("Idle");
+            pb
+        })
+        .collect::<Vec<ProgressBar>>();
+    thread::spawn(move || {
+        segments_pb_holder.join_and_clear().unwrap();
+    });
+
+    let segment_count = overall_progress.keyframes.len();
+    let mut last_segments_completed = 0;
+    loop {
+        for (slot, rx) in receivers.iter().enumerate() {
+            while let Ok(msg) = rx.try_recv() {
+                let segment_idx = msg.as_ref().map(|msg| msg.segment_idx).unwrap_or(0);
+                update_progress(
+                    msg,
+                    &mut overall_progress,
+                    segment_idx,
+                    segment_count,
+                    slots.clone(),
+                    slot,
+                    &segment_pbs[slot],
+                );
+            }
+        }
+        if overall_progress.completed_segments.len() != last_segments_completed {
+            last_segments_completed = overall_progress.completed_segments.len();
+            update_overall_progress(&output_file, &overall_progress, &main_pb);
+
+            if overall_progress.completed_segments.len() == overall_progress.keyframes.len() {
+                // Done encoding
+                main_pb.finish();
+                for pb in &segment_pbs {
+                    pb.finish();
+                }
+                thread::sleep(Duration::from_millis(100));
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    overall_progress.print_summary();
+}
+
+fn update_progress(
+    progress: Option<ProgressInfo>,
+    overall_progress: &mut ProgressInfo,
+    segment_idx: usize,
+    segment_count: usize,
+    slots: Arc<Mutex<Vec<bool>>>,
+    slot_idx: usize,
+    pb: &ProgressBar,
+) {
+    if let Some(ref progress) = progress {
+        if progress.total_frames == 0 {
+            // New segment starting
+            pb.set_prefix(&format!("{:>4}/{}", segment_idx, segment_count));
+            pb.set_message("Starting...");
+        } else if progress.frame_info.is_empty() {
+            // Frames loaded for new segment
+            pb.set_style(progress_active_style());
+            pb.set_length(progress.total_frames as u64);
+        } else if progress.total_frames == progress.frame_info.len() {
+            // Segment complete
+            overall_progress
+                .frame_info
+                .extend_from_slice(&progress.frame_info);
+            overall_progress.encoded_size += progress.encoded_size;
+            overall_progress.completed_segments.push(segment_idx);
+            slots.lock().unwrap()[slot_idx] = false;
+
+            pb.set_style(progress_idle_style());
+            pb.set_prefix("Idle");
+            pb.set_message("");
+            pb.set_position(0);
+            pb.set_length(0);
+        } else {
+            // Normal tick
+            pb.set_position(progress.frame_info.len() as u64);
+            pb.set_message(&progress.progress());
+        }
+    } else {
+        // Skipped segment
+        slots.lock().unwrap()[slot_idx] = false;
+        pb.set_style(progress_idle_style());
+        pb.set_prefix("Idle");
+        pb.set_message("");
+        pb.set_position(0);
+        pb.set_length(0);
+    }
+}
+
+fn update_overall_progress(output_file: &Path, overall_progress: &ProgressInfo, pb: &ProgressBar) {
+    update_progress_file(output_file, &overall_progress);
+
+    pb.set_position(overall_progress.frame_info.len() as u64);
+    pb.set_message(&overall_progress.progress_verbose());
+}
+
 #[derive(Debug, Clone, Error)]
 pub enum EncodeError {
     #[error(display = "Command '{}' failed to complete", _0)]
     CommandFailure(&'static str),
+}
+
+fn progress_idle_style() -> ProgressStyle {
+    ProgressStyle::default_spinner().template("[{prefix}] {wide_msg}")
+}
+
+fn main_progress_style() -> ProgressStyle {
+    ProgressStyle::default_bar()
+        .template("[{prefix}] [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {wide_msg}")
+        .progress_chars("##-")
+}
+
+fn progress_active_style() -> ProgressStyle {
+    ProgressStyle::default_bar()
+        .template("[{prefix}] [{elapsed_precise}] {bar:40} {pos:>4}/{len:4} {wide_msg}")
+        .progress_chars("##-")
 }
