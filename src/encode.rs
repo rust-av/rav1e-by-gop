@@ -790,7 +790,7 @@ fn progress_idle_style() -> ProgressStyle {
 
 fn main_progress_style() -> ProgressStyle {
     ProgressStyle::default_bar()
-        .template("[{prefix}] [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {wide_msg}")
+        .template("[{prefix}] [{elapsed_precise}] {bar:36.cyan/blue} {pos:>7}/{len:7} {wide_msg}")
         .progress_chars("##-")
 }
 
