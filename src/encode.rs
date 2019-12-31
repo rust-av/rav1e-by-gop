@@ -673,13 +673,13 @@ fn watch_progress_receivers(
     let segments_pb_holder = MultiProgress::new();
     let main_pb = segments_pb_holder.add(ProgressBar::new(overall_progress.total_frames as u64));
     main_pb.set_style(main_progress_style());
-    main_pb.set_prefix(&Style::new().blue().apply_to("Overall").to_string());
+    main_pb.set_prefix(&Style::new().blue().bold().apply_to("Overall").to_string());
     main_pb.set_position(0);
     let segment_pbs = (0..receivers.len())
         .map(|_| {
             let pb = segments_pb_holder.add(ProgressBar::new_spinner());
             pb.set_style(progress_idle_style());
-            pb.set_prefix("Idle");
+            pb.set_prefix(&Style::new().cyan().dim().apply_to("Idle").to_string());
             pb.set_position(0);
             pb.set_length(0);
             pb
@@ -739,7 +739,12 @@ fn update_progress(
         if progress.total_frames == 0 {
             // New segment starting
             pb.set_style(progress_active_style());
-            pb.set_prefix(&format!("{:>4}/{}", segment_idx, segment_count));
+            pb.set_prefix(
+                &Style::new()
+                    .cyan()
+                    .apply_to(&format!("{:>4}/{}", segment_idx, segment_count))
+                    .to_string(),
+            );
             pb.reset_elapsed();
             pb.set_position(0);
             pb.set_length(0);
@@ -756,7 +761,7 @@ fn update_progress(
             slots.lock().unwrap()[slot_idx] = false;
 
             pb.set_style(progress_idle_style());
-            pb.set_prefix("Idle");
+            pb.set_prefix(&Style::new().cyan().dim().apply_to("Idle").to_string());
             pb.set_message("");
             pb.reset_elapsed();
             pb.set_length(0);
@@ -769,7 +774,7 @@ fn update_progress(
         // Skipped segment
         slots.lock().unwrap()[slot_idx] = false;
         pb.set_style(progress_idle_style());
-        pb.set_prefix("Idle");
+        pb.set_prefix(&Style::new().cyan().dim().apply_to("Idle").to_string());
         pb.set_message("");
         pb.reset_elapsed();
         pb.set_length(0);
@@ -795,12 +800,16 @@ fn progress_idle_style() -> ProgressStyle {
 
 fn main_progress_style() -> ProgressStyle {
     ProgressStyle::default_bar()
-        .template("[{prefix}] [{elapsed_precise}] {bar:36.cyan/blue} {pos:>7}/{len:7} {wide_msg}")
+        .template(
+            "[{prefix}] [{elapsed_precise}] {bar:36.cyan/white.dim} {pos:>7}/{len:7} {wide_msg}",
+        )
         .progress_chars("##-")
 }
 
 fn progress_active_style() -> ProgressStyle {
     ProgressStyle::default_bar()
-        .template("[{prefix}] [{elapsed_precise}] {bar:40} {pos:>4}/{len:4} {wide_msg}")
+        .template(
+            "[{prefix}] [{elapsed_precise}] {bar:40.blue/white.dim} {pos:>4}/{len:4} {wide_msg}",
+        )
         .progress_chars("##-")
 }
