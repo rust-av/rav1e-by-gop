@@ -333,7 +333,6 @@ pub struct ProgressInfo {
     // The length of the whole video, in frames
     pub total_frames: usize,
     // The time the encode was started
-    // FIXME: This will be broken for resumed encodes
     pub time_started: Instant,
     // List of frames encoded so far
     pub frame_info: Vec<FrameSummary>,
@@ -511,6 +510,9 @@ pub struct SerializableProgressInfo {
     encoded_size: usize,
     keyframes: Vec<usize>,
     completed_segments: Vec<usize>,
+    // Wall encoding time elapsed so far, in seconds
+    #[serde(default)]
+    elapsed_time: u64,
 }
 
 impl From<&ProgressInfo> for SerializableProgressInfo {
@@ -526,6 +528,7 @@ impl From<&ProgressInfo> for SerializableProgressInfo {
             encoded_size: other.encoded_size,
             keyframes: other.keyframes.clone(),
             completed_segments: other.completed_segments.clone(),
+            elapsed_time: other.elapsed_time() as u64,
         }
     }
 }
@@ -539,7 +542,7 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
             encoded_size: other.encoded_size,
             keyframes: other.keyframes.clone(),
             completed_segments: other.completed_segments.clone(),
-            time_started: Instant::now(),
+            time_started: Instant::now() - Duration::from_secs(other.elapsed_time),
             segment_idx: 0,
         }
     }
