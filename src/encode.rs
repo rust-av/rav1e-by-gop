@@ -651,11 +651,16 @@ fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<
         return Err(Box::new(EncodeError::CommandFailure("ffmpeg")));
     }
 
+    // Allow the progress indicator thread
+    // enough time to output the end-of-encode stats
+    thread::sleep(Duration::from_secs(5));
+
     let _ = remove_file(segments_filename);
     for segment in segments {
         let _ = remove_file(segment);
     }
     let _ = remove_file(get_progress_filename(out_filename));
+
     Ok(())
 }
 
