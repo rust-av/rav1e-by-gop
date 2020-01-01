@@ -4,6 +4,7 @@ use crate::decode::{Decoder, VideoDetails};
 use crate::encode::progress::{watch_progress_receivers, ProgressChannel, ProgressSender};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
+use console::style;
 use crossbeam_channel::unbounded;
 use err_derive::Error;
 use rav1e::prelude::*;
@@ -438,10 +439,23 @@ impl ProgressInfo {
 
     pub fn print_summary(&self) {
         eprintln!("{}", self.end_of_encode_progress());
+
+        eprintln!();
+
+        eprintln!("{}", style("Summary by Frame Type").yellow());
+        eprintln!(
+            "{:10} | {:>6} | {:>9} | {:>6}",
+            style("Frame Type").blue(),
+            style("Count").blue(),
+            style("Avg Size").blue(),
+            style("Avg QP").blue(),
+        );
         self.print_frame_type_summary(FrameType::KEY);
         self.print_frame_type_summary(FrameType::INTER);
         self.print_frame_type_summary(FrameType::INTRA_ONLY);
         self.print_frame_type_summary(FrameType::SWITCH);
+
+        eprintln!();
     }
 
     fn print_frame_type_summary(&self, frame_type: FrameType) {
@@ -449,11 +463,11 @@ impl ProgressInfo {
         let size = self.get_frame_type_avg_size(frame_type);
         let avg_qp = self.get_frame_type_avg_qp(frame_type);
         eprintln!(
-            "{:17} {:>6} | avg QP: {:6.2} | avg size: {:>7} B",
-            format!("{}:", frame_type),
-            count,
-            avg_qp,
-            size
+            "{:10} | {:>6} | {:>9} | {:>6.2}",
+            style(frame_type.to_string().replace(" frame", "")).blue(),
+            style(count).cyan(),
+            style(format!("{} B", size)).cyan(),
+            style(avg_qp).cyan(),
         );
     }
 
@@ -478,8 +492,9 @@ impl ProgressInfo {
 
     fn end_of_encode_progress(&self) -> String {
         format!(
-            "Elapsed time: {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
-            secs_to_human_time(self.elapsed_time() as u64, true),
+            "{} in {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
+            style("Finished").yellow(),
+            style(secs_to_human_time(self.elapsed_time() as u64, true)).cyan(),
             self.encoding_fps(),
             self.bitrate() as f64 / 1000f64,
             self.estimated_size() as f64 / (1024 * 1024) as f64,

@@ -8,10 +8,10 @@ use self::encode::perform_encode;
 use crate::analyze::get_total_frame_count;
 use crate::encode::{get_progress_filename, ProgressInfo, SerializableProgressInfo};
 use clap::{App, Arg, ArgMatches};
-use console::Term;
+use console::{style, Term};
 use std::error::Error;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -189,18 +189,22 @@ fn main() {
     );
     assert!(opts.qp <= 255, "QP must be between 0-255");
 
-    let term = Term::stderr();
+    let mut term_err = Term::stderr();
 
     let progress = if get_progress_filename(opts.output).is_file() {
         let resume = if matches.is_present("FORCE_RESUME") {
             true
         } else if matches.is_present("FORCE_OVERWRITE") {
             false
-        } else if term.is_term() {
+        } else if term_err.is_term() {
             let resolved;
             loop {
                 let input = dialoguer::Input::<String>::new()
-                    .with_prompt("Found progress file for this encode. [R]esume or [O]verwrite?")
+                    .with_prompt(&format!(
+                        "Found progress file for this encode. [{}]esume or [{}]verwrite?",
+                        style("R").cyan(),
+                        style("O").cyan()
+                    ))
                     .interact()
                     .unwrap();
                 match input.to_lowercase().as_str() {
@@ -237,6 +241,12 @@ fn main() {
     };
 
     let (keyframes, frame_count) = if let Some(ref progress) = progress {
+        let _ = write!(
+            term_err,
+            "{} encode: {} analyzed",
+            style("Resuming").yellow(),
+            style(format!("{} frames", progress.total_frames)).cyan()
+        );
         (progress.keyframes.clone(), progress.total_frames)
     } else {
         (
@@ -244,9 +254,14 @@ fn main() {
             get_total_frame_count(&opts).expect("Failed to get frame count"),
         )
     };
+    eprintln!();
 
-    eprintln!("\nEncoding {} segments...", keyframes.len());
+    eprintln!(
+        "{} {}...",
+        style("Encoding").yellow(),
+        style(format!("{} segments", keyframes.len())).cyan()
+    );
     perform_encode(&keyframes, frame_count, &opts, progress).expect("Failed encoding");
 
-    eprintln!("Finished!");
+    eprintln!("{}", style("Finished!").yellow());
 }
