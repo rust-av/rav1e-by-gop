@@ -1,10 +1,11 @@
+mod progress;
+
 use crate::decode::{Decoder, VideoDetails};
+use crate::encode::progress::{watch_progress_receivers, ProgressChannel, ProgressSender};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
-use console::Style;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::unbounded;
 use err_derive::Error;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rav1e::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
@@ -321,10 +322,6 @@ fn process_frame<T: Pixel>(
     }
     Ok(Some(frame_summaries))
 }
-
-type ProgressSender = Sender<Option<ProgressInfo>>;
-type ProgressReceiver = Receiver<Option<ProgressInfo>>;
-type ProgressChannel = (ProgressSender, ProgressReceiver);
 
 #[derive(Debug, Clone)]
 pub struct ProgressInfo {
@@ -664,152 +661,8 @@ fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<
     Ok(())
 }
 
-fn watch_progress_receivers(
-    receivers: Vec<ProgressReceiver>,
-    slots: Arc<Mutex<Vec<bool>>>,
-    output_file: PathBuf,
-    mut overall_progress: ProgressInfo,
-) {
-    let segments_pb_holder = MultiProgress::new();
-    let main_pb = segments_pb_holder.add(ProgressBar::new(overall_progress.total_frames as u64));
-    main_pb.set_style(main_progress_style());
-    main_pb.set_prefix(&Style::new().blue().bold().apply_to("Overall").to_string());
-    main_pb.set_position(0);
-    let segment_pbs = (0..receivers.len())
-        .map(|_| {
-            let pb = segments_pb_holder.add(ProgressBar::new_spinner());
-            pb.set_style(progress_idle_style());
-            pb.set_prefix(&Style::new().cyan().dim().apply_to("Idle").to_string());
-            pb.set_position(0);
-            pb.set_length(0);
-            pb
-        })
-        .collect::<Vec<ProgressBar>>();
-    thread::spawn(move || {
-        segments_pb_holder.join_and_clear().unwrap();
-    });
-
-    let segment_count = overall_progress.keyframes.len();
-    let mut last_segments_completed = 0;
-    loop {
-        for (slot, rx) in receivers.iter().enumerate() {
-            while let Ok(msg) = rx.try_recv() {
-                let segment_idx = msg.as_ref().map(|msg| msg.segment_idx).unwrap_or(0);
-                update_progress(
-                    msg,
-                    &mut overall_progress,
-                    segment_idx,
-                    segment_count,
-                    slots.clone(),
-                    slot,
-                    &segment_pbs[slot],
-                );
-            }
-        }
-        if overall_progress.completed_segments.len() != last_segments_completed {
-            last_segments_completed = overall_progress.completed_segments.len();
-            update_overall_progress(&output_file, &overall_progress, &main_pb);
-
-            if overall_progress.completed_segments.len() == overall_progress.keyframes.len() {
-                // Done encoding
-                main_pb.finish();
-                for pb in &segment_pbs {
-                    pb.finish();
-                }
-                thread::sleep(Duration::from_millis(100));
-                break;
-            }
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-
-    overall_progress.print_summary();
-}
-
-fn update_progress(
-    progress: Option<ProgressInfo>,
-    overall_progress: &mut ProgressInfo,
-    segment_idx: usize,
-    segment_count: usize,
-    slots: Arc<Mutex<Vec<bool>>>,
-    slot_idx: usize,
-    pb: &ProgressBar,
-) {
-    if let Some(ref progress) = progress {
-        if progress.total_frames == 0 {
-            // New segment starting
-            pb.set_style(progress_active_style());
-            pb.set_prefix(
-                &Style::new()
-                    .cyan()
-                    .apply_to(&format!("{:>4}/{}", segment_idx, segment_count))
-                    .to_string(),
-            );
-            pb.reset_elapsed();
-            pb.set_position(0);
-            pb.set_length(0);
-        } else if progress.frame_info.is_empty() {
-            // Frames loaded for new segment
-            pb.set_length(progress.total_frames as u64);
-        } else if progress.total_frames == progress.frame_info.len() {
-            // Segment complete
-            overall_progress
-                .frame_info
-                .extend_from_slice(&progress.frame_info);
-            overall_progress.encoded_size += progress.encoded_size;
-            overall_progress.completed_segments.push(segment_idx);
-            slots.lock().unwrap()[slot_idx] = false;
-
-            pb.set_style(progress_idle_style());
-            pb.set_prefix(&Style::new().cyan().dim().apply_to("Idle").to_string());
-            pb.set_message("");
-            pb.reset_elapsed();
-            pb.set_length(0);
-        } else {
-            // Normal tick
-            pb.set_position(progress.frame_info.len() as u64);
-            pb.set_message(&progress.progress());
-        }
-    } else {
-        // Skipped segment
-        slots.lock().unwrap()[slot_idx] = false;
-        pb.set_style(progress_idle_style());
-        pb.set_prefix(&Style::new().cyan().dim().apply_to("Idle").to_string());
-        pb.set_message("");
-        pb.reset_elapsed();
-        pb.set_length(0);
-    }
-}
-
-fn update_overall_progress(output_file: &Path, overall_progress: &ProgressInfo, pb: &ProgressBar) {
-    update_progress_file(output_file, &overall_progress);
-
-    pb.set_position(overall_progress.frame_info.len() as u64);
-    pb.set_message(&overall_progress.progress_verbose());
-}
-
 #[derive(Debug, Clone, Error)]
 pub enum EncodeError {
     #[error(display = "Command '{}' failed to complete", _0)]
     CommandFailure(&'static str),
-}
-
-fn progress_idle_style() -> ProgressStyle {
-    ProgressStyle::default_spinner().template("[{prefix}]")
-}
-
-fn main_progress_style() -> ProgressStyle {
-    ProgressStyle::default_bar()
-        .template(
-            "[{prefix}] [{elapsed_precise}] {bar:36.cyan/white.dim} {pos:>7}/{len:7} {wide_msg}",
-        )
-        .progress_chars("##-")
-}
-
-fn progress_active_style() -> ProgressStyle {
-    ProgressStyle::default_bar()
-        .template(
-            "[{prefix}] [{elapsed_precise}] {bar:40.blue/white.dim} {pos:>4}/{len:4} {wide_msg}",
-        )
-        .progress_chars("##-")
 }
