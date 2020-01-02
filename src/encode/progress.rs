@@ -1,4 +1,5 @@
-use crate::encode::{update_progress_file, ProgressInfo};
+use crate::encode::stats::ProgressInfo;
+use crate::encode::update_progress_file;
 use console::{style, StyledObject};
 use crossbeam_channel::{Receiver, Sender};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -15,6 +16,7 @@ pub fn watch_progress_receivers(
     receivers: Vec<ProgressReceiver>,
     slots: Arc<Mutex<Vec<bool>>>,
     output_file: PathBuf,
+    verbose: bool,
     mut overall_progress: ProgressInfo,
 ) {
     let segments_pb_holder = MultiProgress::new();
@@ -70,7 +72,7 @@ pub fn watch_progress_receivers(
         thread::sleep(Duration::from_millis(100));
     }
 
-    overall_progress.print_summary();
+    overall_progress.print_summary(verbose);
 }
 
 fn update_progress(

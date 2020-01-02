@@ -1,14 +1,15 @@
 mod progress;
+pub mod stats;
 
 use crate::decode::{Decoder, VideoDetails};
 use crate::encode::progress::{watch_progress_receivers, ProgressChannel, ProgressSender};
+use crate::encode::stats::{FrameSummary, ProgressInfo};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
 use console::style;
 use crossbeam_channel::unbounded;
 use err_derive::Error;
 use rav1e::prelude::*;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 use std::fs::remove_file;
 use std::fs::File;
@@ -19,7 +20,6 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
-use std::time::Instant;
 use std::{cmp, thread};
 use threadpool::ThreadPool;
 
@@ -82,8 +82,9 @@ pub fn perform_encode(
         .map(|(_, rx)| rx.clone())
         .collect::<Vec<_>>();
     let slots_ref = slots.clone();
+    let verbose = opts.verbose;
     thread::spawn(move || {
-        watch_progress_receivers(receivers, slots_ref, output_file, overall_progress);
+        watch_progress_receivers(receivers, slots_ref, output_file, verbose, overall_progress);
     });
 
     let mut current_frameno = 0;
@@ -221,8 +222,11 @@ fn encode_segment<T: Pixel, D: Decoder>(
 fn update_progress_file(output: &Path, progress: &ProgressInfo) {
     let progress_file =
         File::create(get_progress_filename(&output)).expect("Failed to open progress file");
-    serde_json::to_writer(progress_file, &SerializableProgressInfo::from(progress))
-        .expect("Failed to write to progress file");
+    serde_json::to_writer(
+        progress_file,
+        &stats::SerializableProgressInfo::from(progress),
+    )
+    .expect("Failed to write to progress file");
 }
 
 fn get_segment_output_filename(output: &Path, segment_idx: usize) -> PathBuf {
@@ -325,314 +329,6 @@ fn process_frame<T: Pixel>(
         Err(EncoderStatus::Encoded) => {}
     }
     Ok(Some(frame_summaries))
-}
-
-#[derive(Debug, Clone)]
-pub struct ProgressInfo {
-    // Frame rate of the video
-    pub frame_rate: Rational,
-    // The length of the whole video, in frames
-    pub total_frames: usize,
-    // The time the encode was started
-    pub time_started: Instant,
-    // List of frames encoded so far
-    pub frame_info: Vec<FrameSummary>,
-    // Video size so far in bytes.
-    //
-    // This value will be updated in the CLI very frequently, so we cache the previous value
-    // to reduce the overall complexity.
-    pub encoded_size: usize,
-    // The below are used for resume functionality
-    pub keyframes: Vec<usize>,
-    pub completed_segments: Vec<usize>,
-    pub segment_idx: usize,
-}
-
-impl ProgressInfo {
-    pub fn new(
-        frame_rate: Rational,
-        total_frames: usize,
-        keyframes: Vec<usize>,
-        segment_idx: usize,
-    ) -> Self {
-        Self {
-            frame_rate,
-            total_frames,
-            time_started: Instant::now(),
-            frame_info: Vec::with_capacity(total_frames),
-            encoded_size: 0,
-            keyframes,
-            completed_segments: Vec::new(),
-            segment_idx,
-        }
-    }
-
-    pub fn add_frame(&mut self, frame: FrameSummary) {
-        self.encoded_size += frame.size;
-        self.frame_info.push(frame);
-    }
-
-    pub fn frames_encoded(&self) -> usize {
-        self.frame_info.len()
-    }
-
-    pub fn encoding_fps(&self) -> f64 {
-        self.frame_info.len() as f64 / self.elapsed_time()
-    }
-
-    pub fn video_fps(&self) -> f64 {
-        self.frame_rate.num as f64 / self.frame_rate.den as f64
-    }
-
-    // Returns the bitrate of the frames so far, in bits/second
-    pub fn bitrate(&self) -> usize {
-        let bits = self.encoded_size * 8;
-        let seconds = self.frame_info.len() as f64 / self.video_fps();
-        (bits as f64 / seconds) as usize
-    }
-
-    // Estimates the final filesize in bytes, if the number of frames is known
-    pub fn estimated_size(&self) -> usize {
-        self.encoded_size * self.total_frames / self.frames_encoded()
-    }
-
-    // Estimates the remaining encoding time in seconds, if the number of frames is known
-    pub fn estimated_time(&self) -> u64 {
-        ((self.total_frames - self.frames_encoded()) as f64 / self.encoding_fps()) as u64
-    }
-
-    pub fn elapsed_time(&self) -> f64 {
-        let duration = Instant::now().duration_since(self.time_started);
-        (duration.as_secs() as f64 + duration.subsec_millis() as f64 / 1000f64)
-    }
-
-    // Number of frames of given type which appear in the video
-    fn get_frame_type_count(&self, frame_type: FrameType) -> usize {
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .count()
-    }
-
-    fn get_frame_type_avg_size(&self, frame_type: FrameType) -> usize {
-        let count = self.get_frame_type_count(frame_type);
-        if count == 0 {
-            return 0;
-        }
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| frame.size)
-            .sum::<usize>()
-            / count
-    }
-
-    fn get_frame_type_avg_qp(&self, frame_type: FrameType) -> f32 {
-        let count = self.get_frame_type_count(frame_type);
-        if count == 0 {
-            return 0.;
-        }
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| frame.qp as f32)
-            .sum::<f32>()
-            / count as f32
-    }
-
-    pub fn print_summary(&self) {
-        eprintln!("{}", self.end_of_encode_progress());
-
-        eprintln!();
-
-        eprintln!("{}", style("Summary by Frame Type").yellow());
-        eprintln!(
-            "{:10} | {:>6} | {:>9} | {:>6}",
-            style("Frame Type").blue(),
-            style("Count").blue(),
-            style("Avg Size").blue(),
-            style("Avg QP").blue(),
-        );
-        self.print_frame_type_summary(FrameType::KEY);
-        self.print_frame_type_summary(FrameType::INTER);
-        self.print_frame_type_summary(FrameType::INTRA_ONLY);
-        self.print_frame_type_summary(FrameType::SWITCH);
-
-        eprintln!();
-    }
-
-    fn print_frame_type_summary(&self, frame_type: FrameType) {
-        let count = self.get_frame_type_count(frame_type);
-        let size = self.get_frame_type_avg_size(frame_type);
-        let avg_qp = self.get_frame_type_avg_qp(frame_type);
-        eprintln!(
-            "{:10} | {:>6} | {:>9} | {:>6.2}",
-            style(frame_type.to_string().replace(" frame", "")).blue(),
-            style(count).cyan(),
-            style(format!("{} B", size)).cyan(),
-            style(avg_qp).cyan(),
-        );
-    }
-
-    fn progress(&self) -> String {
-        format!(
-            "{:.2} fps, {:.1} Kb/s, ETA {}",
-            self.encoding_fps(),
-            self.bitrate() as f64 / 1000f64,
-            secs_to_human_time(self.estimated_time(), false)
-        )
-    }
-
-    fn progress_verbose(&self) -> String {
-        format!(
-            "{:.2} fps, {:.1} Kb/s, est. {:.2} MB, {}",
-            self.encoding_fps(),
-            self.bitrate() as f64 / 1000f64,
-            self.estimated_size() as f64 / (1024 * 1024) as f64,
-            secs_to_human_time(self.estimated_time(), false)
-        )
-    }
-
-    fn end_of_encode_progress(&self) -> String {
-        format!(
-            "{} in {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
-            style("Finished").yellow(),
-            style(secs_to_human_time(self.elapsed_time() as u64, true)).cyan(),
-            self.encoding_fps(),
-            self.bitrate() as f64 / 1000f64,
-            self.estimated_size() as f64 / (1024 * 1024) as f64,
-        )
-    }
-}
-
-fn secs_to_human_time(mut secs: u64, always_show_hours: bool) -> String {
-    let mut mins = secs / 60;
-    secs %= 60;
-    let hours = mins / 60;
-    mins %= 60;
-    if hours > 0 || always_show_hours {
-        format!("{:02}:{:02}:{:02}", hours, mins, secs)
-    } else {
-        format!("{:02}:{:02}", mins, secs)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SerializableProgressInfo {
-    frame_rate: (u64, u64),
-    total_frames: usize,
-    frame_info: Vec<SerializableFrameSummary>,
-    encoded_size: usize,
-    keyframes: Vec<usize>,
-    completed_segments: Vec<usize>,
-    // Wall encoding time elapsed so far, in seconds
-    #[serde(default)]
-    elapsed_time: u64,
-}
-
-impl From<&ProgressInfo> for SerializableProgressInfo {
-    fn from(other: &ProgressInfo) -> Self {
-        SerializableProgressInfo {
-            frame_rate: (other.frame_rate.num, other.frame_rate.den),
-            total_frames: other.total_frames,
-            frame_info: other
-                .frame_info
-                .iter()
-                .map(SerializableFrameSummary::from)
-                .collect(),
-            encoded_size: other.encoded_size,
-            keyframes: other.keyframes.clone(),
-            completed_segments: other.completed_segments.clone(),
-            elapsed_time: other.elapsed_time() as u64,
-        }
-    }
-}
-
-impl From<&SerializableProgressInfo> for ProgressInfo {
-    fn from(other: &SerializableProgressInfo) -> Self {
-        ProgressInfo {
-            frame_rate: Rational::new(other.frame_rate.0, other.frame_rate.1),
-            total_frames: other.total_frames,
-            frame_info: other.frame_info.iter().map(FrameSummary::from).collect(),
-            encoded_size: other.encoded_size,
-            keyframes: other.keyframes.clone(),
-            completed_segments: other.completed_segments.clone(),
-            time_started: Instant::now() - Duration::from_secs(other.elapsed_time),
-            segment_idx: 0,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct FrameSummary {
-    /// Frame size in bytes
-    pub size: usize,
-    pub frame_type: FrameType,
-    /// QP selected for the frame.
-    pub qp: u8,
-}
-
-impl<T: Pixel> From<Packet<T>> for FrameSummary {
-    fn from(packet: Packet<T>) -> Self {
-        Self {
-            size: packet.data.len(),
-            frame_type: packet.frame_type,
-            qp: packet.qp,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct SerializableFrameSummary {
-    pub size: usize,
-    pub frame_type: u8,
-    pub qp: u8,
-}
-
-impl From<&FrameSummary> for SerializableFrameSummary {
-    fn from(summary: &FrameSummary) -> Self {
-        SerializableFrameSummary {
-            size: summary.size,
-            frame_type: summary.frame_type as u8,
-            qp: summary.qp,
-        }
-    }
-}
-
-impl From<&SerializableFrameSummary> for FrameSummary {
-    fn from(summary: &SerializableFrameSummary) -> Self {
-        FrameSummary {
-            size: summary.size,
-            frame_type: match summary.frame_type {
-                0 => FrameType::KEY,
-                1 => FrameType::INTER,
-                2 => FrameType::INTRA_ONLY,
-                3 => FrameType::SWITCH,
-                _ => unreachable!(),
-            },
-            qp: summary.qp,
-        }
-    }
-}
-
-impl Serialize for FrameSummary {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let ser = SerializableFrameSummary::from(self);
-        ser.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for FrameSummary {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let de = SerializableFrameSummary::deserialize(deserializer)?;
-        Ok(FrameSummary::from(&de))
-    }
 }
 
 fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<dyn Error>> {

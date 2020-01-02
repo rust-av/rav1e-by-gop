@@ -6,7 +6,8 @@ mod muxer;
 use self::analyze::detect_keyframes;
 use self::encode::perform_encode;
 use crate::analyze::get_total_frame_count;
-use crate::encode::{get_progress_filename, ProgressInfo, SerializableProgressInfo};
+use crate::encode::get_progress_filename;
+use crate::encode::stats::{ProgressInfo, SerializableProgressInfo};
 use clap::{App, Arg, ArgMatches};
 use console::{style, Term};
 use std::error::Error;
@@ -25,6 +26,7 @@ pub struct CliOptions<'a> {
     min_keyint: u64,
     max_keyint: u64,
     max_threads: Option<usize>,
+    verbose: bool,
 }
 
 impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
@@ -44,6 +46,7 @@ impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
             max_threads: matches
                 .value_of("MAX_THREADS")
                 .map(|threads| threads.parse().unwrap()),
+            verbose: matches.is_present("VERBOSE"),
         }
     }
 }
@@ -176,6 +179,12 @@ fn main() {
                 .help("Overwrite any in-progress encodes without being prompted")
                 .long("overwrite")
                 .conflicts_with("FORCE_RESUME"),
+        )
+        .arg(
+            Arg::with_name("VERBOSE")
+                .help("Print more stats at end of encode")
+                .long("verbose")
+                .short("v"),
         )
         .get_matches();
     let opts = CliOptions::from(&matches);
