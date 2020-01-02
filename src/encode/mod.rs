@@ -33,13 +33,16 @@ pub fn perform_encode(
     let mut dec = y4m::decode(&mut reader).expect("input is not a y4m file");
     let video_info = dec.get_video_details();
     eprintln!(
-        "Using y4m decoder: {}x{}p @ {}/{} fps, {}, {}-bit",
-        video_info.width,
-        video_info.height,
-        video_info.time_base.den,
-        video_info.time_base.num,
-        video_info.chroma_sampling,
-        video_info.bit_depth
+        "Using {} decoder: {}p @ {} fps, {}, {}",
+        style("y4m").cyan(),
+        style(format!("{}x{}", video_info.width, video_info.height)).cyan(),
+        style(format!(
+            "{}/{}",
+            video_info.time_base.den, video_info.time_base.num
+        ))
+        .cyan(),
+        style(video_info.chroma_sampling).cyan(),
+        style(format!("{}-bit", video_info.bit_depth)).cyan()
     );
 
     let mut num_threads = cmp::min(keyframes.len(), num_cpus::get());
@@ -47,7 +50,7 @@ pub fn perform_encode(
         num_threads = cmp::min(num_threads, max_threads);
     }
     let mut thread_pool = ThreadPool::new(num_threads);
-    eprintln!("Using {} encoder threads", num_threads);
+    eprintln!("Using {} encoder threads", style(num_threads).cyan());
 
     let overall_progress = if let Some(progress) = progress {
         progress
