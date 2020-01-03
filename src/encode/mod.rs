@@ -3,7 +3,7 @@ pub mod stats;
 
 use crate::decode::{Decoder, VideoDetails};
 use crate::encode::progress::{watch_progress_receivers, ProgressChannel, ProgressSender};
-use crate::encode::stats::{FrameSummary, ProgressInfo};
+use crate::encode::stats::ProgressInfo;
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
 use console::style;
@@ -271,9 +271,9 @@ fn do_encode<T: Pixel>(
         cfg.enc.time_base.num as usize,
     );
 
-    while let Some(frame_info) = process_frame(&mut ctx, &mut source, &mut *output)? {
-        for frame in frame_info {
-            progress.add_frame(frame.clone());
+    while let Some(packets) = process_frame(&mut ctx, &mut source, &mut *output)? {
+        for packet in packets {
+            progress.add_packet(packet);
         }
         let _ = progress_sender.send(Some(progress.clone()));
         output.flush().unwrap();
@@ -303,13 +303,13 @@ fn process_frame<T: Pixel>(
     ctx: &mut Context<T>,
     source: &mut Source<T>,
     output: &mut dyn Muxer,
-) -> Result<Option<Vec<FrameSummary>>, Box<dyn Error>> {
-    let mut frame_summaries = Vec::new();
+) -> Result<Option<Vec<Packet<T>>>, Box<dyn Error>> {
+    let mut packets = Vec::new();
     let pkt_wrapped = ctx.receive_packet();
     match pkt_wrapped {
         Ok(pkt) => {
             output.write_frame(pkt.input_frameno as u64, pkt.data.as_ref(), pkt.frame_type);
-            frame_summaries.push(pkt.into());
+            packets.push(pkt);
         }
         Err(EncoderStatus::NeedMoreData) => {
             source.read_frame(ctx);
@@ -328,7 +328,7 @@ fn process_frame<T: Pixel>(
         }
         Err(EncoderStatus::Encoded) => {}
     }
-    Ok(Some(frame_summaries))
+    Ok(Some(packets))
 }
 
 fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<dyn Error>> {

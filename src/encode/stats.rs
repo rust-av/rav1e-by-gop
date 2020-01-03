@@ -15,6 +15,8 @@ pub struct ProgressInfo {
     pub time_started: Instant,
     // List of frames encoded so far
     pub frame_info: Vec<FrameSummary>,
+    // Summarized verbose encoding stats, split into I and P frames
+    pub encoding_stats: (EncoderStats, EncoderStats),
     // Video size so far in bytes.
     //
     // This value will be updated in the CLI very frequently, so we cache the previous value
@@ -42,12 +44,17 @@ impl ProgressInfo {
             keyframes,
             completed_segments: Vec::new(),
             segment_idx,
+            encoding_stats: (EncoderStats::default(), EncoderStats::default()),
         }
     }
 
-    pub fn add_frame(&mut self, frame: FrameSummary) {
-        self.encoded_size += frame.size;
-        self.frame_info.push(frame);
+    pub fn add_packet<T: Pixel>(&mut self, packet: Packet<T>) {
+        self.encoded_size += packet.data.len();
+        match packet.frame_type {
+            FrameType::KEY => self.encoding_stats.0 += &packet.enc_stats,
+            _ => self.encoding_stats.1 += &packet.enc_stats,
+        };
+        self.frame_info.push(packet.into());
     }
 
     pub fn frames_encoded(&self) -> usize {
@@ -119,19 +126,29 @@ impl ProgressInfo {
     }
 
     fn get_block_count_by_frame_type(&self, frame_type: FrameType) -> usize {
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| frame.enc_stats.block_size_counts.values().sum::<usize>())
-            .sum()
+        match frame_type {
+            FrameType::KEY => self
+                .encoding_stats
+                .0
+                .block_size_counts
+                .values()
+                .sum::<usize>(),
+            FrameType::INTER => self
+                .encoding_stats
+                .1
+                .block_size_counts
+                .values()
+                .sum::<usize>(),
+            _ => unreachable!(),
+        }
     }
 
     fn get_tx_count_by_frame_type(&self, frame_type: FrameType) -> usize {
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| frame.enc_stats.tx_type_counts.values().sum::<usize>())
-            .sum()
+        match frame_type {
+            FrameType::KEY => self.encoding_stats.0.tx_type_counts.values().sum::<usize>(),
+            FrameType::INTER => self.encoding_stats.1.tx_type_counts.values().sum::<usize>(),
+            _ => unreachable!(),
+        }
     }
 
     fn get_bsize_pct_by_frame_type(&self, bsize: BlockSize, frame_type: FrameType) -> f32 {
@@ -139,18 +156,23 @@ impl ProgressInfo {
         if count == 0 {
             return 0.;
         }
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| {
-                frame
-                    .enc_stats
-                    .block_size_counts
-                    .get(&bsize)
-                    .copied()
-                    .unwrap_or(0)
-            })
-            .sum::<usize>() as f32
+        (match frame_type {
+            FrameType::KEY => self
+                .encoding_stats
+                .0
+                .block_size_counts
+                .get(&bsize)
+                .copied()
+                .unwrap_or(0),
+            FrameType::INTER => self
+                .encoding_stats
+                .1
+                .block_size_counts
+                .get(&bsize)
+                .copied()
+                .unwrap_or(0),
+            _ => unreachable!(),
+        }) as f32
             / count as f32
             * 100.
     }
@@ -160,62 +182,75 @@ impl ProgressInfo {
         if count == 0 {
             return 0.;
         }
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| frame.enc_stats.skip_block_count)
-            .sum::<usize>() as f32
+        (match frame_type {
+            FrameType::KEY => self.encoding_stats.0.skip_block_count,
+            FrameType::INTER => self.encoding_stats.1.skip_block_count,
+            _ => unreachable!(),
+        }) as f32
             / count as f32
             * 100.
     }
 
-    fn get_txtype_pct_by_frame_type(&self, txtype: TxType, frame_type: FrameType) -> f32 {
+    fn get_txtype_pct_by_frame_type(&self, tx_type: TxType, frame_type: FrameType) -> f32 {
         let count = self.get_tx_count_by_frame_type(frame_type);
         if count == 0 {
             return 0.;
         }
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| {
-                frame
-                    .enc_stats
-                    .tx_type_counts
-                    .get(&txtype)
-                    .copied()
-                    .unwrap_or(0)
-            })
-            .sum::<usize>() as f32
+        (match frame_type {
+            FrameType::KEY => self
+                .encoding_stats
+                .0
+                .tx_type_counts
+                .get(&tx_type)
+                .copied()
+                .unwrap_or(0),
+            FrameType::INTER => self
+                .encoding_stats
+                .1
+                .tx_type_counts
+                .get(&tx_type)
+                .copied()
+                .unwrap_or(0),
+            _ => unreachable!(),
+        }) as f32
             / count as f32
             * 100.
     }
 
     fn get_luma_pred_count_by_frame_type(&self, frame_type: FrameType) -> usize {
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| {
-                frame
-                    .enc_stats
-                    .luma_pred_mode_counts
-                    .values()
-                    .sum::<usize>()
-            })
-            .sum()
+        match frame_type {
+            FrameType::KEY => self
+                .encoding_stats
+                .0
+                .luma_pred_mode_counts
+                .values()
+                .sum::<usize>(),
+            FrameType::INTER => self
+                .encoding_stats
+                .1
+                .luma_pred_mode_counts
+                .values()
+                .sum::<usize>(),
+            _ => unreachable!(),
+        }
     }
 
     fn get_chroma_pred_count_by_frame_type(&self, frame_type: FrameType) -> usize {
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| {
-                frame
-                    .enc_stats
-                    .chroma_pred_mode_counts
-                    .values()
-                    .sum::<usize>()
-            })
-            .sum()
+        match frame_type {
+            FrameType::KEY => self
+                .encoding_stats
+                .0
+                .chroma_pred_mode_counts
+                .values()
+                .sum::<usize>(),
+            FrameType::INTER => self
+                .encoding_stats
+                .1
+                .chroma_pred_mode_counts
+                .values()
+                .sum::<usize>(),
+            _ => unreachable!(),
+        }
     }
 
     fn get_luma_pred_mode_pct_by_frame_type(
@@ -227,18 +262,23 @@ impl ProgressInfo {
         if count == 0 {
             return 0.;
         }
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| {
-                frame
-                    .enc_stats
-                    .luma_pred_mode_counts
-                    .get(&pred_mode)
-                    .copied()
-                    .unwrap_or(0)
-            })
-            .sum::<usize>() as f32
+        (match frame_type {
+            FrameType::KEY => self
+                .encoding_stats
+                .0
+                .luma_pred_mode_counts
+                .get(&pred_mode)
+                .copied()
+                .unwrap_or(0),
+            FrameType::INTER => self
+                .encoding_stats
+                .1
+                .luma_pred_mode_counts
+                .get(&pred_mode)
+                .copied()
+                .unwrap_or(0),
+            _ => unreachable!(),
+        }) as f32
             / count as f32
             * 100.
     }
@@ -252,18 +292,23 @@ impl ProgressInfo {
         if count == 0 {
             return 0.;
         }
-        self.frame_info
-            .iter()
-            .filter(|frame| frame.frame_type == frame_type)
-            .map(|frame| {
-                frame
-                    .enc_stats
-                    .chroma_pred_mode_counts
-                    .get(&pred_mode)
-                    .copied()
-                    .unwrap_or(0)
-            })
-            .sum::<usize>() as f32
+        (match frame_type {
+            FrameType::KEY => self
+                .encoding_stats
+                .0
+                .chroma_pred_mode_counts
+                .get(&pred_mode)
+                .copied()
+                .unwrap_or(0),
+            FrameType::INTER => self
+                .encoding_stats
+                .1
+                .chroma_pred_mode_counts
+                .get(&pred_mode)
+                .copied()
+                .unwrap_or(0),
+            _ => unreachable!(),
+        }) as f32
             / count as f32
             * 100.
     }
@@ -938,6 +983,8 @@ pub struct SerializableProgressInfo {
     // Wall encoding time elapsed so far, in seconds
     #[serde(default)]
     elapsed_time: u64,
+    #[serde(default)]
+    encoding_stats: (SerializableEncoderStats, SerializableEncoderStats),
 }
 
 impl From<&ProgressInfo> for SerializableProgressInfo {
@@ -954,6 +1001,10 @@ impl From<&ProgressInfo> for SerializableProgressInfo {
             keyframes: other.keyframes.clone(),
             completed_segments: other.completed_segments.clone(),
             elapsed_time: other.elapsed_time() as u64,
+            encoding_stats: (
+                (&other.encoding_stats.0).into(),
+                (&other.encoding_stats.1).into(),
+            ),
         }
     }
 }
@@ -969,6 +1020,10 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
             completed_segments: other.completed_segments.clone(),
             time_started: Instant::now() - Duration::from_secs(other.elapsed_time),
             segment_idx: 0,
+            encoding_stats: (
+                (&other.encoding_stats.0).into(),
+                (&other.encoding_stats.1).into(),
+            ),
         }
     }
 }
@@ -980,8 +1035,6 @@ pub struct FrameSummary {
     pub frame_type: FrameType,
     /// QP selected for the frame.
     pub qp: u8,
-    /// Block-level encoding stats for the frame
-    pub enc_stats: EncoderStats,
 }
 
 impl<T: Pixel> From<Packet<T>> for FrameSummary {
@@ -990,7 +1043,6 @@ impl<T: Pixel> From<Packet<T>> for FrameSummary {
             size: packet.data.len(),
             frame_type: packet.frame_type,
             qp: packet.qp,
-            enc_stats: packet.enc_stats,
         }
     }
 }
@@ -1000,8 +1052,6 @@ pub struct SerializableFrameSummary {
     pub size: usize,
     pub frame_type: u8,
     pub qp: u8,
-    #[serde(default)]
-    pub enc_stats: SerializableEncoderStats,
 }
 
 impl From<&FrameSummary> for SerializableFrameSummary {
@@ -1010,7 +1060,6 @@ impl From<&FrameSummary> for SerializableFrameSummary {
             size: summary.size,
             frame_type: summary.frame_type as u8,
             qp: summary.qp,
-            enc_stats: (&summary.enc_stats).into(),
         }
     }
 }
@@ -1027,7 +1076,6 @@ impl From<&SerializableFrameSummary> for FrameSummary {
                 _ => unreachable!(),
             },
             qp: summary.qp,
-            enc_stats: (&summary.enc_stats).into(),
         }
     }
 }

@@ -102,6 +102,8 @@ fn update_progress(
                 .extend_from_slice(&progress.frame_info);
             overall_progress.encoded_size += progress.encoded_size;
             overall_progress.completed_segments.push(segment_idx);
+            overall_progress.encoding_stats.0 += &progress.encoding_stats.0;
+            overall_progress.encoding_stats.1 += &progress.encoding_stats.1;
             slots.lock().unwrap()[slot_idx] = false;
 
             pb.set_style(progress_idle_style());
