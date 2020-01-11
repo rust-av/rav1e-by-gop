@@ -2,7 +2,6 @@ use console::style;
 use rav1e::data::EncoderStats;
 use rav1e::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
@@ -131,13 +130,13 @@ impl ProgressInfo {
                 .encoding_stats
                 .0
                 .block_size_counts
-                .values()
+                .iter()
                 .sum::<usize>(),
             FrameType::INTER => self
                 .encoding_stats
                 .1
                 .block_size_counts
-                .values()
+                .iter()
                 .sum::<usize>(),
             _ => unreachable!(),
         }
@@ -145,8 +144,8 @@ impl ProgressInfo {
 
     fn get_tx_count_by_frame_type(&self, frame_type: FrameType) -> usize {
         match frame_type {
-            FrameType::KEY => self.encoding_stats.0.tx_type_counts.values().sum::<usize>(),
-            FrameType::INTER => self.encoding_stats.1.tx_type_counts.values().sum::<usize>(),
+            FrameType::KEY => self.encoding_stats.0.tx_type_counts.iter().sum::<usize>(),
+            FrameType::INTER => self.encoding_stats.1.tx_type_counts.iter().sum::<usize>(),
             _ => unreachable!(),
         }
     }
@@ -157,20 +156,8 @@ impl ProgressInfo {
             return 0.;
         }
         (match frame_type {
-            FrameType::KEY => self
-                .encoding_stats
-                .0
-                .block_size_counts
-                .get(&bsize)
-                .copied()
-                .unwrap_or(0),
-            FrameType::INTER => self
-                .encoding_stats
-                .1
-                .block_size_counts
-                .get(&bsize)
-                .copied()
-                .unwrap_or(0),
+            FrameType::KEY => self.encoding_stats.0.block_size_counts[bsize as usize],
+            FrameType::INTER => self.encoding_stats.1.block_size_counts[bsize as usize],
             _ => unreachable!(),
         }) as f32
             / count as f32
@@ -197,20 +184,8 @@ impl ProgressInfo {
             return 0.;
         }
         (match frame_type {
-            FrameType::KEY => self
-                .encoding_stats
-                .0
-                .tx_type_counts
-                .get(&tx_type)
-                .copied()
-                .unwrap_or(0),
-            FrameType::INTER => self
-                .encoding_stats
-                .1
-                .tx_type_counts
-                .get(&tx_type)
-                .copied()
-                .unwrap_or(0),
+            FrameType::KEY => self.encoding_stats.0.tx_type_counts[tx_type as usize],
+            FrameType::INTER => self.encoding_stats.1.tx_type_counts[tx_type as usize],
             _ => unreachable!(),
         }) as f32
             / count as f32
@@ -223,13 +198,13 @@ impl ProgressInfo {
                 .encoding_stats
                 .0
                 .luma_pred_mode_counts
-                .values()
+                .iter()
                 .sum::<usize>(),
             FrameType::INTER => self
                 .encoding_stats
                 .1
                 .luma_pred_mode_counts
-                .values()
+                .iter()
                 .sum::<usize>(),
             _ => unreachable!(),
         }
@@ -241,13 +216,13 @@ impl ProgressInfo {
                 .encoding_stats
                 .0
                 .chroma_pred_mode_counts
-                .values()
+                .iter()
                 .sum::<usize>(),
             FrameType::INTER => self
                 .encoding_stats
                 .1
                 .chroma_pred_mode_counts
-                .values()
+                .iter()
                 .sum::<usize>(),
             _ => unreachable!(),
         }
@@ -263,20 +238,8 @@ impl ProgressInfo {
             return 0.;
         }
         (match frame_type {
-            FrameType::KEY => self
-                .encoding_stats
-                .0
-                .luma_pred_mode_counts
-                .get(&pred_mode)
-                .copied()
-                .unwrap_or(0),
-            FrameType::INTER => self
-                .encoding_stats
-                .1
-                .luma_pred_mode_counts
-                .get(&pred_mode)
-                .copied()
-                .unwrap_or(0),
+            FrameType::KEY => self.encoding_stats.0.luma_pred_mode_counts[pred_mode as usize],
+            FrameType::INTER => self.encoding_stats.1.luma_pred_mode_counts[pred_mode as usize],
             _ => unreachable!(),
         }) as f32
             / count as f32
@@ -293,20 +256,8 @@ impl ProgressInfo {
             return 0.;
         }
         (match frame_type {
-            FrameType::KEY => self
-                .encoding_stats
-                .0
-                .chroma_pred_mode_counts
-                .get(&pred_mode)
-                .copied()
-                .unwrap_or(0),
-            FrameType::INTER => self
-                .encoding_stats
-                .1
-                .chroma_pred_mode_counts
-                .get(&pred_mode)
-                .copied()
-                .unwrap_or(0),
+            FrameType::KEY => self.encoding_stats.0.chroma_pred_mode_counts[pred_mode as usize],
+            FrameType::INTER => self.encoding_stats.1.chroma_pred_mode_counts[pred_mode as usize],
             _ => unreachable!(),
         }) as f32
             / count as f32
@@ -602,7 +553,7 @@ impl ProgressInfo {
                 "{:8} {:>5.1}%",
                 style("63-Deg").blue(),
                 style(
-                    self.get_luma_pred_mode_pct_by_frame_type(PredictionMode::D63_PRED, frame_type)
+                    self.get_luma_pred_mode_pct_by_frame_type(PredictionMode::D67_PRED, frame_type)
                 )
                 .cyan()
             );
@@ -611,7 +562,7 @@ impl ProgressInfo {
                 style("117-Deg").blue(),
                 style(
                     self.get_luma_pred_mode_pct_by_frame_type(
-                        PredictionMode::D117_PRED,
+                        PredictionMode::D113_PRED,
                         frame_type
                     )
                 )
@@ -633,7 +584,7 @@ impl ProgressInfo {
                 style("153-Deg").blue(),
                 style(
                     self.get_luma_pred_mode_pct_by_frame_type(
-                        PredictionMode::D153_PRED,
+                        PredictionMode::D157_PRED,
                         frame_type
                     )
                 )
@@ -644,7 +595,7 @@ impl ProgressInfo {
                 style("207-Deg").blue(),
                 style(
                     self.get_luma_pred_mode_pct_by_frame_type(
-                        PredictionMode::D207_PRED,
+                        PredictionMode::D203_PRED,
                         frame_type
                     )
                 )
@@ -817,7 +768,7 @@ impl ProgressInfo {
                 style("63-Deg").blue(),
                 style(
                     self.get_chroma_pred_mode_pct_by_frame_type(
-                        PredictionMode::D63_PRED,
+                        PredictionMode::D67_PRED,
                         frame_type
                     )
                 )
@@ -828,7 +779,7 @@ impl ProgressInfo {
                 style("117-Deg").blue(),
                 style(
                     self.get_chroma_pred_mode_pct_by_frame_type(
-                        PredictionMode::D117_PRED,
+                        PredictionMode::D113_PRED,
                         frame_type
                     )
                 )
@@ -850,7 +801,7 @@ impl ProgressInfo {
                 style("153-Deg").blue(),
                 style(
                     self.get_chroma_pred_mode_pct_by_frame_type(
-                        PredictionMode::D153_PRED,
+                        PredictionMode::D157_PRED,
                         frame_type
                     )
                 )
@@ -861,7 +812,7 @@ impl ProgressInfo {
                 style("207-Deg").blue(),
                 style(
                     self.get_chroma_pred_mode_pct_by_frame_type(
-                        PredictionMode::D207_PRED,
+                        PredictionMode::D203_PRED,
                         frame_type
                     )
                 )
@@ -1100,44 +1051,31 @@ impl<'de> Deserialize<'de> for FrameSummary {
     }
 }
 
+pub const TX_TYPES: usize = 16;
+pub const PREDICTION_MODES: usize = 28;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SerializableEncoderStats {
     /// Stores count of pixels belonging to each block size in this frame
-    pub block_size_counts: BTreeMap<u8, usize>,
+    pub block_size_counts: [usize; BlockSize::BLOCK_SIZES],
     /// Stores count of pixels belonging to skip blocks in this frame
     pub skip_block_count: usize,
     /// Stores count of pixels belonging to each transform type in this frame
-    pub tx_type_counts: BTreeMap<u8, usize>,
+    pub tx_type_counts: [usize; TX_TYPES],
     /// Stores count of pixels belonging to each luma prediction mode in this frame
-    pub luma_pred_mode_counts: BTreeMap<u8, usize>,
+    pub luma_pred_mode_counts: [usize; PREDICTION_MODES],
     /// Stores count of pixels belonging to each chroma prediction mode in this frame
-    pub chroma_pred_mode_counts: BTreeMap<u8, usize>,
+    pub chroma_pred_mode_counts: [usize; PREDICTION_MODES],
 }
 
 impl From<&EncoderStats> for SerializableEncoderStats {
     fn from(stats: &EncoderStats) -> Self {
         SerializableEncoderStats {
-            block_size_counts: stats
-                .block_size_counts
-                .iter()
-                .map(|(k, v)| (*k as u8, *v))
-                .collect(),
+            block_size_counts: stats.block_size_counts,
             skip_block_count: stats.skip_block_count,
-            tx_type_counts: stats
-                .tx_type_counts
-                .iter()
-                .map(|(k, v)| (*k as u8, *v))
-                .collect(),
-            luma_pred_mode_counts: stats
-                .luma_pred_mode_counts
-                .iter()
-                .map(|(k, v)| (*k as u8, *v))
-                .collect(),
-            chroma_pred_mode_counts: stats
-                .chroma_pred_mode_counts
-                .iter()
-                .map(|(k, v)| (*k as u8, *v))
-                .collect(),
+            tx_type_counts: stats.tx_type_counts,
+            luma_pred_mode_counts: stats.luma_pred_mode_counts,
+            chroma_pred_mode_counts: stats.chroma_pred_mode_counts,
         }
     }
 }
@@ -1145,114 +1083,11 @@ impl From<&EncoderStats> for SerializableEncoderStats {
 impl From<&SerializableEncoderStats> for EncoderStats {
     fn from(stats: &SerializableEncoderStats) -> Self {
         EncoderStats {
-            block_size_counts: stats
-                .block_size_counts
-                .iter()
-                .map(|(k, v)| (block_size_from_u8(*k), *v))
-                .collect(),
+            block_size_counts: stats.block_size_counts,
             skip_block_count: stats.skip_block_count,
-            tx_type_counts: stats
-                .tx_type_counts
-                .iter()
-                .map(|(k, v)| (tx_type_from_u8(*k), *v))
-                .collect(),
-            luma_pred_mode_counts: stats
-                .luma_pred_mode_counts
-                .iter()
-                .map(|(k, v)| (pred_mode_from_u8(*k), *v))
-                .collect(),
-            chroma_pred_mode_counts: stats
-                .chroma_pred_mode_counts
-                .iter()
-                .map(|(k, v)| (pred_mode_from_u8(*k), *v))
-                .collect(),
+            tx_type_counts: stats.tx_type_counts,
+            luma_pred_mode_counts: stats.luma_pred_mode_counts,
+            chroma_pred_mode_counts: stats.chroma_pred_mode_counts,
         }
-    }
-}
-
-fn block_size_from_u8(val: u8) -> BlockSize {
-    use BlockSize::*;
-    match val {
-        0 => BLOCK_4X4,
-        1 => BLOCK_4X8,
-        2 => BLOCK_8X4,
-        3 => BLOCK_8X8,
-        4 => BLOCK_8X16,
-        5 => BLOCK_16X8,
-        6 => BLOCK_16X16,
-        7 => BLOCK_16X32,
-        8 => BLOCK_32X16,
-        9 => BLOCK_32X32,
-        10 => BLOCK_32X64,
-        11 => BLOCK_64X32,
-        12 => BLOCK_64X64,
-        13 => BLOCK_64X128,
-        14 => BLOCK_128X64,
-        15 => BLOCK_128X128,
-        16 => BLOCK_4X16,
-        17 => BLOCK_16X4,
-        18 => BLOCK_8X32,
-        19 => BLOCK_32X8,
-        20 => BLOCK_16X64,
-        21 => BLOCK_64X16,
-        _ => unreachable!(),
-    }
-}
-
-fn tx_type_from_u8(val: u8) -> TxType {
-    use TxType::*;
-    match val {
-        0 => DCT_DCT,
-        1 => ADST_DCT,
-        2 => DCT_ADST,
-        3 => ADST_ADST,
-        4 => FLIPADST_DCT,
-        5 => DCT_FLIPADST,
-        6 => FLIPADST_FLIPADST,
-        7 => ADST_FLIPADST,
-        8 => FLIPADST_ADST,
-        9 => IDTX,
-        10 => V_DCT,
-        11 => H_DCT,
-        12 => V_ADST,
-        13 => H_ADST,
-        14 => V_FLIPADST,
-        15 => H_FLIPADST,
-        _ => unreachable!(),
-    }
-}
-
-fn pred_mode_from_u8(val: u8) -> PredictionMode {
-    use PredictionMode::*;
-    match val {
-        0 => DC_PRED,
-        1 => V_PRED,
-        2 => H_PRED,
-        3 => D45_PRED,
-        4 => D135_PRED,
-        5 => D117_PRED,
-        6 => D153_PRED,
-        7 => D207_PRED,
-        8 => D63_PRED,
-        9 => SMOOTH_PRED,
-        10 => SMOOTH_V_PRED,
-        11 => SMOOTH_H_PRED,
-        12 => PAETH_PRED,
-        13 => UV_CFL_PRED,
-        14 => NEARESTMV,
-        15 => NEAR0MV,
-        16 => NEAR1MV,
-        17 => NEAR2MV,
-        18 => GLOBALMV,
-        19 => NEWMV,
-        20 => NEAREST_NEARESTMV,
-        21 => NEAR_NEARMV,
-        22 => NEAREST_NEWMV,
-        23 => NEW_NEARESTMV,
-        24 => NEAR_NEWMV,
-        25 => NEW_NEARMV,
-        26 => GLOBAL_GLOBALMV,
-        27 => NEW_NEWMV,
-        _ => unreachable!(),
     }
 }
