@@ -11,6 +11,7 @@ use crate::encode::stats::{ProgressInfo, SerializableProgressInfo};
 use clap::{App, Arg, ArgMatches};
 use console::{style, Term};
 use std::error::Error;
+use std::fmt;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -71,6 +72,15 @@ impl<'a> Input<'a> {
                 Box::new(pipe.stdout.unwrap()) as Box<dyn Read>
             }
         })
+    }
+}
+
+impl<'a> fmt::Display for Input<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Input::File(path) => write!(f, "{}", path.to_string_lossy().as_ref()),
+            Input::Pipe(command) => write!(f, "{}", command),
+        }
     }
 }
 
@@ -258,6 +268,12 @@ fn main() {
         );
         (progress.keyframes.clone(), progress.total_frames)
     } else {
+        eprintln!(
+            "Using input from `{}`, keyint {}-{}",
+            opts.first_pass_input.unwrap_or_else(|| opts.input),
+            opts.min_keyint,
+            opts.max_keyint
+        );
         (
             detect_keyframes(&opts).expect("Failed to run keyframe detection"),
             get_total_frame_count(&opts).expect("Failed to get frame count"),
@@ -265,6 +281,10 @@ fn main() {
     };
     eprintln!();
 
+    eprintln!(
+        "Using input from `{}`, speed {}, quantizer {}",
+        opts.input, opts.speed, opts.qp
+    );
     eprintln!(
         "{} {}...",
         style("Encoding").yellow(),
