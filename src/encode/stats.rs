@@ -1057,7 +1057,7 @@ pub const PREDICTION_MODES: usize = 28;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SerializableEncoderStats {
     /// Stores count of pixels belonging to each block size in this frame
-    pub block_size_counts: [usize; BlockSize::BLOCK_SIZES],
+    pub block_size_counts: [usize; BlockSize::BLOCK_SIZES_ALL],
     /// Stores count of pixels belonging to skip blocks in this frame
     pub skip_block_count: usize,
     /// Stores count of pixels belonging to each transform type in this frame
