@@ -484,7 +484,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.3.0"
-source = "git+https://github.com/xiph/rav1e#754541eb81f4e66820b2e84e2fea3597f51a89a5"
+source = "git+https://github.com/xiph/rav1e#4dfda58791ab7c2406bffc78cd25602fde49feac"
 dependencies = [
  "arbitrary 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "arg_enum_proc_macro 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -756,7 +756,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#754541eb81f4e66820b2e84e2fea3597f51a89a5"
+source = "git+https://github.com/xiph/rav1e#4dfda58791ab7c2406bffc78cd25602fde49feac"
 dependencies = [
  "bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
