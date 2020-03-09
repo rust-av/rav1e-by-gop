@@ -8,7 +8,6 @@ use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
 use console::style;
 use crossbeam_channel::unbounded;
-use err_derive::Error;
 use rav1e::prelude::*;
 use std::error::Error;
 use std::fs::remove_file;
@@ -377,6 +376,6 @@ fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<
 
 #[derive(Debug, Clone, Error)]
 pub enum EncodeError {
-    #[error(display = "Command '{}' failed to complete", _0)]
+    #[error("Command '{0}' failed to complete")]
     CommandFailure(&'static str),
 }

@@ -11,7 +11,6 @@ description = "A tool to parallel encode GOP segments of a video with rav1e"
 [dependencies]
 av-scenechange = { version = "0.3", default-features = false, features = ["serde"] }
 clap = "2"
-err-derive = "0.2"
 ivf = "0.1"
 num_cpus = "1"
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm"] }
@@ -23,6 +22,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 crossbeam-channel = "0.4"
 indicatif = "0.14"
+thiserror = "1"
 
 [profile.dev]
 opt-level = 1
