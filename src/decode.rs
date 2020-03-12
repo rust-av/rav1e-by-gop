@@ -14,6 +14,10 @@ use std::io::{self, Read};
 pub trait Decoder {
     fn get_video_details(&self) -> VideoDetails;
     fn read_frame<T: Pixel>(&mut self, cfg: &VideoDetails) -> Result<Frame<T>, DecodeError>;
+    fn skip_frame<T: Pixel>(&mut self, cfg: &VideoDetails) -> Result<(), DecodeError> {
+        self.read_frame::<T>(cfg)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -85,6 +89,11 @@ impl Decoder for y4m::Decoder<'_, Box<dyn Read>> {
                 f
             })
             .map_err(Into::into)
+    }
+
+    fn skip_frame<T: Pixel>(&mut self, _cfg: &VideoDetails) -> Result<(), DecodeError> {
+        self.read_frame()?;
+        Ok(())
     }
 }
 

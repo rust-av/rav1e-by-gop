@@ -164,6 +164,22 @@ fn encode_segment<T: Pixel, D: Decoder>(
         segment_idx,
     )));
 
+    if skip {
+        while next_keyframe
+            .map(|next| *current_frameno < next)
+            .unwrap_or(true)
+        {
+            if dec.skip_frame::<T>(&video_info).is_ok() {
+                *current_frameno += 1;
+            } else {
+                break;
+            }
+        }
+
+        let _ = progress_sender.send(None);
+        return Ok(());
+    }
+
     let mut frames = Vec::with_capacity(next_keyframe.map(|next| next - keyframe).unwrap_or(0));
     while next_keyframe
         .map(|next| *current_frameno < next)
@@ -175,11 +191,6 @@ fn encode_segment<T: Pixel, D: Decoder>(
         } else {
             break;
         }
-    }
-
-    if skip {
-        let _ = progress_sender.send(None);
-        return Ok(());
     }
 
     let mut cfg = Config {
