@@ -18,10 +18,6 @@ per encoder thread, e.g. if you are running 16 threads,
 32GB of RAM is the recommended minimum.
 Memory requirements may be even higher for e.g. 4k or 10-bit content.
 
-## Dependencies
-
-You need `ffmpeg` installed on your machine.
-
 ## Basic Usage
 
 To encode a video from y4m to AV1 (in ivf container):

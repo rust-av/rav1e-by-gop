@@ -13,9 +13,7 @@ use std::error::Error;
 use std::fs::remove_file;
 use std::fs::File;
 use std::io::BufWriter;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
@@ -88,6 +86,19 @@ pub fn perform_encode(
 
     let mut current_frameno = 0;
     let mut iter = keyframes.iter().enumerate().peekable();
+
+    // Write only the ivf header
+    create_muxer(&get_segment_output_filename(&opts.output, 0))
+        .map(|mut output| {
+            output.write_header(
+                video_info.width,
+                video_info.height,
+                video_info.time_base.den as usize,
+                video_info.time_base.num as usize,
+            );
+        })
+        .expect("Failed to create segment output");
+
     while let Some((idx, &keyframe)) = iter.next() {
         let mut open_slot;
         loop {
@@ -243,10 +254,6 @@ fn get_segment_output_filename(output: &Path, segment_idx: usize) -> PathBuf {
     output.with_extension(&format!("part{}.ivf", segment_idx))
 }
 
-fn get_segment_list_filename(output: &Path) -> PathBuf {
-    output.with_extension("segments.txt")
-}
-
 pub fn get_progress_filename(output: &Path) -> PathBuf {
     output.with_extension("progress.json")
 }
@@ -274,12 +281,6 @@ fn do_encode<T: Pixel>(
 
     let mut output = create_muxer(&get_segment_output_filename(&output_file, segment_idx))
         .expect("Failed to create segment output");
-    output.write_header(
-        video_info.width,
-        video_info.height,
-        cfg.enc.time_base.den as usize,
-        cfg.enc.time_base.num as usize,
-    );
 
     while let Some(packets) = process_frame(&mut ctx, &mut source, &mut *output)? {
         for packet in packets {
@@ -342,51 +343,38 @@ fn process_frame<T: Pixel>(
 }
 
 fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<dyn Error>> {
-    let segments = (1..=num_segments)
-        .map(|seg_idx| get_segment_output_filename(out_filename, seg_idx))
-        .collect::<Vec<_>>();
-    let segments_filename = get_segment_list_filename(out_filename);
-    {
-        let segments_file = File::create(&segments_filename)?;
-        let mut writer = BufWriter::new(&segments_file);
-        for segment in &segments {
-            writer.write_all(format!("file '{}'\n", segment.to_str().unwrap()).as_bytes())?;
-        }
-        segments_file.sync_all()?;
-    }
+    let mut out = BufWriter::new(File::create(out_filename)?);
+    let segments =
+        (0..=num_segments).map(|seg_idx| get_segment_output_filename(out_filename, seg_idx));
+    let mut files = segments.clone();
+    let header = files.next().unwrap();
+    std::io::copy(&mut File::open(header)?, &mut out)?;
 
-    let result = Command::new("ffmpeg")
-        .arg("-y")
-        .arg("-f")
-        .arg("concat")
-        .arg("-safe")
-        .arg("0")
-        .arg("-i")
-        .arg(&segments_filename)
-        .arg("-c")
-        .arg("copy")
-        .arg(out_filename)
-        .stderr(Stdio::null())
-        .status()?;
-    if !result.success() {
-        return Err(Box::new(EncodeError::CommandFailure("ffmpeg")));
+    let mut pts = 0;
+    for seg_filename in files {
+        let mut in_seg = File::open(seg_filename)?;
+        loop {
+            match ivf::read_packet(&mut in_seg) {
+                Ok(pkt) => {
+                    ivf::write_ivf_frame(&mut out, pts, &pkt.data);
+                    pts += 1;
+                }
+                Err(err) => match err.kind() {
+                    std::io::ErrorKind::UnexpectedEof => break,
+                    _ => return Err(err.into()),
+                },
+            }
+        }
     }
 
     // Allow the progress indicator thread
     // enough time to output the end-of-encode stats
     thread::sleep(Duration::from_secs(5));
 
-    let _ = remove_file(segments_filename);
     for segment in segments {
         let _ = remove_file(segment);
     }
     let _ = remove_file(get_progress_filename(out_filename));
 
     Ok(())
-}
-
-#[derive(Debug, Clone, Error)]
-pub enum EncodeError {
-    #[error("Command '{0}' failed to complete")]
-    CommandFailure(&'static str),
 }
