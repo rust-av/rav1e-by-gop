@@ -87,7 +87,7 @@ impl ProgressInfo {
 
     pub fn elapsed_time(&self) -> f64 {
         let duration = Instant::now().duration_since(self.time_started);
-        (duration.as_secs() as f64 + duration.subsec_millis() as f64 / 1000f64)
+        duration.as_secs() as f64 + duration.subsec_millis() as f64 / 1000f64
     }
 
     // Number of frames of given type which appear in the video

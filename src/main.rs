@@ -3,9 +3,6 @@ mod decode;
 mod encode;
 mod muxer;
 
-#[macro_use]
-extern crate thiserror;
-
 use self::analyze::detect_keyframes;
 use self::encode::perform_encode;
 use crate::analyze::get_total_frame_count;
