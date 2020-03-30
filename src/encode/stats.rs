@@ -2,13 +2,14 @@ use console::style;
 use rav1e::data::EncoderStats;
 use rav1e::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct ProgressInfo {
     // Frame rate of the video
     pub frame_rate: Rational,
-    // The length of the whole video, in frames
+    // The length of the whole video, in frames. `None` if not known.
     pub total_frames: usize,
     // The time the encode was started
     pub time_started: Instant,
@@ -22,17 +23,19 @@ pub struct ProgressInfo {
     // to reduce the overall complexity.
     pub encoded_size: usize,
     // The below are used for resume functionality
-    pub keyframes: Vec<usize>,
-    pub completed_segments: Vec<usize>,
+    pub keyframes: BTreeSet<usize>,
+    pub completed_segments: BTreeSet<usize>,
     pub segment_idx: usize,
+    pub next_analysis_frame: usize,
 }
 
 impl ProgressInfo {
     pub fn new(
         frame_rate: Rational,
         total_frames: usize,
-        keyframes: Vec<usize>,
+        keyframes: BTreeSet<usize>,
         segment_idx: usize,
+        next_analysis_frame: usize,
     ) -> Self {
         Self {
             frame_rate,
@@ -41,9 +44,10 @@ impl ProgressInfo {
             frame_info: Vec::with_capacity(total_frames),
             encoded_size: 0,
             keyframes,
-            completed_segments: Vec::new(),
+            completed_segments: BTreeSet::new(),
             segment_idx,
             encoding_stats: (EncoderStats::default(), EncoderStats::default()),
+            next_analysis_frame,
         }
     }
 
@@ -321,20 +325,28 @@ impl ProgressInfo {
         )
     }
 
-    pub fn progress_verbose(&self) -> String {
-        format!(
-            "{:.2} fps, {:.1} Kb/s, est. {:.2} MB, {}",
-            self.encoding_fps(),
-            self.bitrate() as f64 / 1000f64,
-            self.estimated_size() as f64 / (1024 * 1024) as f64,
-            secs_to_human_time(self.estimated_time(), false)
-        )
+    pub fn progress_overall(&self) -> String {
+        if self.frames_encoded() == 0 {
+            format!(
+                "Input Frame {}, Output Frame {}",
+                self.next_analysis_frame + 1,
+                self.frames_encoded(),
+            )
+        } else {
+            format!(
+                "Input Frame {}, Output Frame {}, {:.2} fps, {:.1} Kb/s",
+                self.next_analysis_frame + 1,
+                self.frames_encoded(),
+                self.encoding_fps(),
+                self.bitrate() as f64 / 1000f64,
+            )
+        }
     }
 
     fn end_of_encode_progress(&self) -> String {
         format!(
-            "{} in {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
-            style("Finished").yellow(),
+            "Encoded {} in {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
+            style(format!("{} frames", self.total_frames)).yellow(),
             style(secs_to_human_time(self.elapsed_time() as u64, true)).cyan(),
             self.encoding_fps(),
             self.bitrate() as f64 / 1000f64,
@@ -926,23 +938,23 @@ fn secs_to_human_time(mut secs: u64, always_show_hours: bool) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SerializableProgressInfo {
     frame_rate: (u64, u64),
-    total_frames: usize,
     frame_info: Vec<SerializableFrameSummary>,
     encoded_size: usize,
-    keyframes: Vec<usize>,
-    completed_segments: Vec<usize>,
+    keyframes: BTreeSet<usize>,
+    completed_segments: BTreeSet<usize>,
+    next_analysis_frame: usize,
     // Wall encoding time elapsed so far, in seconds
     #[serde(default)]
     elapsed_time: u64,
     #[serde(default)]
     encoding_stats: (SerializableEncoderStats, SerializableEncoderStats),
+    total_frames: usize,
 }
 
 impl From<&ProgressInfo> for SerializableProgressInfo {
     fn from(other: &ProgressInfo) -> Self {
         SerializableProgressInfo {
             frame_rate: (other.frame_rate.num, other.frame_rate.den),
-            total_frames: other.total_frames,
             frame_info: other
                 .frame_info
                 .iter()
@@ -950,12 +962,14 @@ impl From<&ProgressInfo> for SerializableProgressInfo {
                 .collect(),
             encoded_size: other.encoded_size,
             keyframes: other.keyframes.clone(),
+            next_analysis_frame: other.next_analysis_frame,
             completed_segments: other.completed_segments.clone(),
             elapsed_time: other.elapsed_time() as u64,
             encoding_stats: (
                 (&other.encoding_stats.0).into(),
                 (&other.encoding_stats.1).into(),
             ),
+            total_frames: other.total_frames,
         }
     }
 }
@@ -964,10 +978,10 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
     fn from(other: &SerializableProgressInfo) -> Self {
         ProgressInfo {
             frame_rate: Rational::new(other.frame_rate.0, other.frame_rate.1),
-            total_frames: other.total_frames,
             frame_info: other.frame_info.iter().map(FrameSummary::from).collect(),
             encoded_size: other.encoded_size,
             keyframes: other.keyframes.clone(),
+            next_analysis_frame: other.next_analysis_frame,
             completed_segments: other.completed_segments.clone(),
             time_started: Instant::now() - Duration::from_secs(other.elapsed_time),
             segment_idx: 0,
@@ -975,6 +989,7 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
                 (&other.encoding_stats.0).into(),
                 (&other.encoding_stats.1).into(),
             ),
+            total_frames: other.total_frames,
         }
     }
 }

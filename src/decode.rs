@@ -10,23 +10,22 @@
 
 use rav1e::prelude::*;
 use std::io::{self, Read};
+use thiserror::Error;
+use y4m::Decoder;
 
-pub trait Decoder {
-    fn get_video_details(&self) -> VideoDetails;
-    fn read_frame<T: Pixel>(&mut self, cfg: &VideoDetails) -> Result<Frame<T>, DecodeError>;
-    fn skip_frame<T: Pixel>(&mut self, cfg: &VideoDetails) -> Result<(), DecodeError> {
-        self.read_frame::<T>(cfg)?;
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DecodeError {
+    #[error("Reached end of file")]
     EOF,
+    #[error("Bad input")]
     BadInput,
+    #[error("Unknown colorspace")]
     UnknownColorspace,
+    #[error("Parse error")]
     ParseError,
+    #[error("IO Error: {0}")]
     IoError(io::Error),
+    #[error("Memory limit exceeded")]
     MemoryLimitExceeded,
 }
 
@@ -53,48 +52,43 @@ impl Default for VideoDetails {
     }
 }
 
-impl Decoder for y4m::Decoder<'_, Box<dyn Read>> {
-    fn get_video_details(&self) -> VideoDetails {
-        let width = self.get_width();
-        let height = self.get_height();
-        let color_space = self.get_colorspace();
-        let bit_depth = color_space.get_bit_depth();
-        let (chroma_sampling, chroma_sample_position) = map_y4m_color_space(color_space);
-        let framerate = self.get_framerate();
-        let time_base = Rational::new(framerate.den as u64, framerate.num as u64);
+pub(crate) fn get_video_details<R: Read>(dec: &Decoder<R>) -> VideoDetails {
+    let width = dec.get_width();
+    let height = dec.get_height();
+    let color_space = dec.get_colorspace();
+    let bit_depth = color_space.get_bit_depth();
+    let (chroma_sampling, chroma_sample_position) = map_y4m_color_space(color_space);
+    let framerate = dec.get_framerate();
+    let time_base = Rational::new(framerate.den as u64, framerate.num as u64);
 
-        VideoDetails {
-            width,
-            height,
-            bit_depth,
-            chroma_sampling,
-            chroma_sample_position,
-            time_base,
-        }
+    VideoDetails {
+        width,
+        height,
+        bit_depth,
+        chroma_sampling,
+        chroma_sample_position,
+        time_base,
     }
+}
 
-    fn read_frame<T: Pixel>(&mut self, cfg: &VideoDetails) -> Result<Frame<T>, DecodeError> {
-        let bytes = self.get_bytes_per_sample();
-        self.read_frame()
-            .map(|frame| {
-                let mut f: Frame<T> = Frame::new(cfg.width, cfg.height, cfg.chroma_sampling);
+pub(crate) fn read_raw_frame<'d, R: Read>(
+    dec: &'d mut Decoder<R>,
+) -> Result<y4m::Frame<'d>, DecodeError> {
+    dec.read_frame().map_err(Into::into)
+}
 
-                let (chroma_width, _) = cfg
-                    .chroma_sampling
-                    .get_chroma_dimensions(cfg.width, cfg.height);
+pub(crate) fn process_raw_frame<T: Pixel>(frame: y4m::Frame, cfg: &VideoDetails) -> Frame<T> {
+    let mut f: Frame<T> = Frame::new(cfg.width, cfg.height, cfg.chroma_sampling);
+    let bytes = if cfg.bit_depth <= 8 { 1 } else { 2 };
 
-                f.planes[0].copy_from_raw_u8(frame.get_y_plane(), cfg.width * bytes, bytes);
-                f.planes[1].copy_from_raw_u8(frame.get_u_plane(), chroma_width * bytes, bytes);
-                f.planes[2].copy_from_raw_u8(frame.get_v_plane(), chroma_width * bytes, bytes);
-                f
-            })
-            .map_err(Into::into)
-    }
+    let (chroma_width, _) = cfg
+        .chroma_sampling
+        .get_chroma_dimensions(cfg.width, cfg.height);
 
-    fn skip_frame<T: Pixel>(&mut self, _cfg: &VideoDetails) -> Result<(), DecodeError> {
-        self.read_frame()?;
-        Ok(())
-    }
+    f.planes[0].copy_from_raw_u8(frame.get_y_plane(), cfg.width * bytes, bytes);
+    f.planes[1].copy_from_raw_u8(frame.get_u_plane(), chroma_width * bytes, bytes);
+    f.planes[2].copy_from_raw_u8(frame.get_v_plane(), chroma_width * bytes, bytes);
+    f
 }
 
 impl From<y4m::Error> for DecodeError {
@@ -112,10 +106,12 @@ impl From<y4m::Error> for DecodeError {
     }
 }
 
-pub fn map_y4m_color_space(color_space: y4m::Colorspace) -> (ChromaSampling, ChromaSamplePosition) {
+pub fn map_y4m_color_space(
+    color_space: y4m::Colorspace,
+) -> (v_frame::prelude::ChromaSampling, ChromaSamplePosition) {
+    use v_frame::prelude::ChromaSampling::*;
     use y4m::Colorspace::*;
     use ChromaSamplePosition::*;
-    use ChromaSampling::*;
 
     match color_space {
         Cmono => (Cs400, Unknown),

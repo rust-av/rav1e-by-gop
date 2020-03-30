@@ -3,24 +3,21 @@ mod decode;
 mod encode;
 mod muxer;
 
-use self::analyze::detect_keyframes;
 use self::encode::perform_encode;
-use crate::encode::get_progress_filename;
-use crate::encode::stats::{ProgressInfo, SerializableProgressInfo};
+use crate::encode::load_progress_file;
 use clap::{App, Arg, ArgMatches};
-use console::{style, Term};
+use console::style;
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::io::{stdin, Read};
+use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy)]
-pub struct CliOptions<'a> {
-    input: Input<'a>,
-    first_pass_input: Option<Input<'a>>,
-    output: &'a Path,
+#[derive(Debug, Clone)]
+pub struct CliOptions {
+    input: Input,
+    output: PathBuf,
     speed: usize,
     qp: usize,
     min_keyint: u64,
@@ -29,16 +26,16 @@ pub struct CliOptions<'a> {
     verbose: bool,
 }
 
-impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
-    fn from(matches: &'a ArgMatches<'a>) -> Self {
+impl From<&ArgMatches<'_>> for CliOptions {
+    fn from(matches: &ArgMatches) -> Self {
+        let input = matches.value_of("INPUT").unwrap();
         CliOptions {
-            input: if matches.is_present("PIPED_INPUT") {
-                Input::Pipe(matches.value_of("INPUT").unwrap())
+            input: if input == "-" {
+                Input::Stdin
             } else {
-                Input::File(Path::new(matches.value_of("INPUT").unwrap()))
+                Input::File(PathBuf::from(input))
             },
-            first_pass_input: matches.value_of("FAST_ANALYSIS").map(Input::Pipe),
-            output: Path::new(matches.value_of("OUTPUT").unwrap()),
+            output: PathBuf::from(matches.value_of("OUTPUT").unwrap()),
             speed: matches.value_of("SPEED").unwrap().parse().unwrap(),
             qp: matches.value_of("QP").unwrap().parse().unwrap(),
             min_keyint: matches.value_of("MIN_KEYINT").unwrap().parse().unwrap(),
@@ -51,63 +48,28 @@ impl<'a> From<&'a ArgMatches<'a>> for CliOptions<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Input<'a> {
-    File(&'a Path),
-    Pipe(&'a str),
+#[derive(Debug, Clone)]
+pub enum Input {
+    File(PathBuf),
+    Stdin,
 }
 
-impl<'a> Input<'a> {
-    pub fn as_reader(self) -> Result<Box<dyn Read>, Box<dyn Error>> {
+impl Input {
+    pub fn as_reader(&self) -> Result<Box<dyn Read + Send>, Box<dyn Error>> {
         Ok(match self {
-            Input::File(filename) => Box::new(File::open(filename)?) as Box<dyn Read>,
-            Input::Pipe(command) => {
-                let command = parse_argv(parse_args(command));
-                let pipe = Command::new(&command[0])
-                    .args(&command[1..])
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::null())
-                    .spawn()?;
-                Box::new(pipe.stdout.unwrap()) as Box<dyn Read>
-            }
+            Input::File(filename) => Box::new(File::open(filename)?),
+            Input::Stdin => Box::new(stdin()),
         })
     }
 }
 
-impl<'a> fmt::Display for Input<'a> {
+impl fmt::Display for Input {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
+        match self {
             Input::File(path) => write!(f, "{}", path.to_string_lossy().as_ref()),
-            Input::Pipe(command) => write!(f, "{}", command),
+            Input::Stdin => write!(f, "stdin"),
         }
     }
-}
-
-fn parse_args(s: &str) -> String {
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    s.chars()
-        .map(|c| {
-            if c == '"' && !in_single_quote {
-                in_double_quote = !in_double_quote;
-                '\n'
-            } else if c == '\'' && !in_double_quote {
-                in_single_quote = !in_single_quote;
-                '\n'
-            } else if !in_single_quote && !in_double_quote && char::is_whitespace(c) {
-                '\n'
-            } else {
-                c
-            }
-        })
-        .collect()
-}
-
-fn parse_argv(s: String) -> Vec<String> {
-    s.split('\n')
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| s.to_string())
-        .collect::<Vec<String>>()
 }
 
 fn main() {
@@ -158,18 +120,11 @@ fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("PIPED_INPUT")
-                .help("Flags that the input is a command to pipe input from")
-                .long("pipe")
-                .alias("piped"),
-        )
-        .arg(
             Arg::with_name("FAST_ANALYSIS")
-                .help("Specify an alternate piped command to use for the analysis pass")
+                .help("Specify an alternate file or piped command to use for the analysis pass")
                 .long("fast-fp")
                 .alias("fast-analysis")
-                .takes_value(true)
-                .requires("PIPED_INPUT"),
+                .takes_value(true),
         )
         .arg(
             Arg::with_name("MAX_THREADS")
@@ -207,87 +162,21 @@ fn main() {
     );
     assert!(opts.qp <= 255, "QP must be between 0-255");
 
-    let mut term_err = Term::stderr();
-
-    let progress = if get_progress_filename(opts.output).is_file() {
-        let resume = if matches.is_present("FORCE_RESUME") {
-            true
-        } else if matches.is_present("FORCE_OVERWRITE") {
-            false
-        } else if term_err.is_term() {
-            let resolved;
-            loop {
-                let input = dialoguer::Input::<String>::new()
-                    .with_prompt(&format!(
-                        "Found progress file for this encode. [{}]esume or [{}]verwrite?",
-                        style("R").cyan(),
-                        style("O").cyan()
-                    ))
-                    .interact()
-                    .unwrap();
-                match input.to_lowercase().as_str() {
-                    "r" | "resume" => {
-                        resolved = true;
-                        break;
-                    }
-                    "o" | "overwrite" => {
-                        resolved = false;
-                        break;
-                    }
-                    _ => {
-                        eprintln!("Input not recognized");
-                    }
-                };
-            }
-            resolved
-        } else {
-            // Assume we want to resume if this is not a TTY
-            // and no CLI option is given
-            true
-        };
-        if resume {
-            let progress_file = File::open(get_progress_filename(opts.output))
-                .expect("Failed to open progress file");
-            let progress_input: SerializableProgressInfo = serde_json::from_reader(progress_file)
-                .expect("Progress file did not contain valid JSON");
-            Some(ProgressInfo::from(&progress_input))
-        } else {
-            None
-        }
+    let progress = load_progress_file(&opts.output, &matches);
+    let (keyframes, next_analysis_frame) = if let Some(ref progress) = progress {
+        eprint!("{} encode", style("Resuming").yellow());
+        (progress.keyframes.clone(), progress.next_analysis_frame)
     } else {
-        None
-    };
-
-    let (keyframes, frame_count) = if let Some(ref progress) = progress {
-        let _ = write!(
-            term_err,
-            "{} encode: {} analyzed",
-            style("Resuming").yellow(),
-            style(format!("{} frames", progress.total_frames)).cyan()
-        );
-        (progress.keyframes.clone(), progress.total_frames)
-    } else {
-        eprintln!(
-            "Using input from `{}`, keyint {}-{}",
-            opts.first_pass_input.unwrap_or_else(|| opts.input),
-            opts.min_keyint,
-            opts.max_keyint
-        );
-        let results = detect_keyframes(&opts).expect("Failed to run keyframe detection");
-        (results.scene_changes, results.frame_count)
+        eprint!("{} encode", style("Starting").yellow());
+        (BTreeSet::new(), 0)
     };
     eprintln!();
 
     eprintln!(
-        "Using input from `{}`, speed {}, quantizer {}",
-        opts.input, opts.speed, opts.qp
+        "Encoding using input from `{}`, speed {}, quantizer {}, keyint {}-{}",
+        opts.input, opts.speed, opts.qp, opts.min_keyint, opts.max_keyint
     );
-    eprintln!(
-        "{} {}...",
-        style("Encoding").yellow(),
-        style(format!("{} segments", keyframes.len())).cyan()
-    );
-    perform_encode(&keyframes, frame_count, &opts, progress).expect("Failed encoding");
+    perform_encode(keyframes, next_analysis_frame, &opts, progress).expect("Failed encoding");
 
     eprintln!("{}", style("Finished!").yellow());
 }
