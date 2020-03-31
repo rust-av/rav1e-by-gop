@@ -5,7 +5,6 @@ mod muxer;
 
 use self::analyze::detect_keyframes;
 use self::encode::perform_encode;
-use crate::analyze::get_total_frame_count;
 use crate::encode::get_progress_filename;
 use crate::encode::stats::{ProgressInfo, SerializableProgressInfo};
 use clap::{App, Arg, ArgMatches};
@@ -274,10 +273,8 @@ fn main() {
             opts.min_keyint,
             opts.max_keyint
         );
-        (
-            detect_keyframes(&opts).expect("Failed to run keyframe detection"),
-            get_total_frame_count(&opts).expect("Failed to get frame count"),
-        )
+        let results = detect_keyframes(&opts).expect("Failed to run keyframe detection");
+        (results.scene_changes, results.frame_count)
     };
     eprintln!();
 
