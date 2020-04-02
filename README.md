@@ -46,5 +46,6 @@ To limit the number of threads
 ## Limitations
 
 - Only supports one-pass QP mode
-  - One-pass bitrate mode will never be supported, because it's bad
+  - One-pass bitrate mode will never be supported,
+    because it's not suitable for the use cases where one would use this tool
   - Two-pass bitrate mode may be supported in the future
