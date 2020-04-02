@@ -13,10 +13,11 @@ which may be quite memory hungry,
 from using all the memory on your system.
 However, memory usage of this tool itself
 is still `O(n)` where n is the number of threads.
-You probably want to have at least 2GB of RAM
-per encoder thread, e.g. if you are running 16 threads,
-32GB of RAM is the recommended minimum.
-Memory requirements may be even higher for e.g. 4k or 10-bit content.
+
+By default, this tool will limit the number of threads
+based on the memory available in your system.
+You can adjust or disable this safeguard using the
+`--memory` CLI option.
 
 ## Basic Usage
 
