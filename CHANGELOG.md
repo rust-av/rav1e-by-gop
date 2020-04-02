@@ -8,6 +8,11 @@
   `ffmpeg -i myinput.mkv -f yuv4mpegpipe - | rav1e-by-gop - -o myencode.ivf`
 - [Breaking] The `--fast-fp` option has been removed.
   It is no longer useful.
+- [Feature] Add options for limiting number of threads
+  based on available memory.
+  No more needing to manually guess how many threads to use.
+  Adjust via the `--memory` CLI option--
+  enabled with "light" setting by default.
 - [Breaking] Progress files from prior to this release will not work
   with this release. This means that in-progress encodes
   from a previous version cannot be resumed.

@@ -11,16 +11,20 @@ use clap::ArgMatches;
 use console::{style, Term};
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
 use rav1e::prelude::*;
+use serde::export::Formatter;
 use std::collections::BTreeSet;
 use std::error::Error;
+use std::fmt::Display;
 use std::fs::remove_file;
 use std::fs::File;
 use std::io::{BufWriter, Read};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
-use std::{cmp, thread};
+use std::{cmp, fmt, thread};
+use systemstat::{ByteSize, Platform, System};
 use threadpool::ThreadPool;
 use y4m::Decoder;
 
@@ -76,10 +80,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
         style(format!("{}-bit", video_info.bit_depth)).cyan()
     );
 
-    let mut num_threads = num_cpus::get();
-    if let Some(max_threads) = opts.max_threads {
-        num_threads = cmp::min(num_threads, max_threads);
-    }
+    let num_threads = decide_thread_count(opts, &video_info);
     let mut thread_pool = ThreadPool::new(num_threads);
     eprintln!("Using {} encoder threads", style(num_threads).cyan());
 
@@ -434,4 +435,109 @@ fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<
     let _ = remove_file(get_progress_filename(out_filename));
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MemoryUsage {
+    Light,
+    Heavy,
+    Unlimited,
+}
+
+impl Default for MemoryUsage {
+    fn default() -> Self {
+        MemoryUsage::Light
+    }
+}
+
+impl FromStr for MemoryUsage {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "light" => Ok(MemoryUsage::Light),
+            "heavy" => Ok(MemoryUsage::Heavy),
+            "unlimited" => Ok(MemoryUsage::Unlimited),
+            _ => Err(()),
+        }
+    }
+}
+
+impl Display for MemoryUsage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                MemoryUsage::Light => "light",
+                MemoryUsage::Heavy => "heavy",
+                MemoryUsage::Unlimited => "unlimited",
+            }
+        )
+    }
+}
+
+fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
+    // Limit to the number of logical CPUs.
+    let mut num_threads = num_cpus::get();
+    if let Some(max_threads) = opts.max_threads {
+        num_threads = cmp::min(num_threads, max_threads);
+    }
+
+    // Limit further based on available memory.
+    let sys = System::new();
+    let sys_memory = sys.memory();
+    if let Ok(sys_memory) = sys_memory {
+        let bytes_per_frame = bytes_per_frame(video_info);
+        // Conservatively account for encoding overhead
+        let bytes_per_segment = opts.max_keyint * bytes_per_frame * 22 / 10;
+        let total = sys_memory.total.as_u64();
+        match opts.memory_usage {
+            MemoryUsage::Light => {
+                // Uses 50% of memory, minimum 2GB,
+                // minimum unreserved memory of 2GB,
+                // maximum unreserved memory of 12GB
+                let unreserved = cmp::min(
+                    ByteSize::gb(12).as_u64(),
+                    cmp::max(ByteSize::gb(2).as_u64(), sys_memory.total.as_u64() / 2),
+                );
+                let limit = cmp::max(ByteSize::gb(2).as_u64(), total.saturating_sub(unreserved));
+                num_threads = cmp::min(
+                    num_threads,
+                    cmp::max(1, (limit / bytes_per_segment) as usize),
+                );
+            }
+            MemoryUsage::Heavy => {
+                // Uses 80% of memory, minimum 2GB,
+                // minimum unreserved memory of 1GB,
+                // maximum unreserved memory of 6GB
+                let unreserved = cmp::min(
+                    ByteSize::gb(6).as_u64(),
+                    cmp::max(ByteSize::gb(1).as_u64(), sys_memory.total.as_u64() * 4 / 5),
+                );
+                let limit = cmp::max(ByteSize::gb(2).as_u64(), total.saturating_sub(unreserved));
+                num_threads = cmp::min(
+                    num_threads,
+                    cmp::max(1, (limit / bytes_per_segment) as usize),
+                );
+            }
+            MemoryUsage::Unlimited => {
+                // do nothing
+            }
+        }
+    }
+
+    num_threads
+}
+
+fn bytes_per_frame(video_info: &VideoDetails) -> u64 {
+    let bytes_per_plane =
+        video_info.width * video_info.height * if video_info.bit_depth > 8 { 2 } else { 1 };
+    (bytes_per_plane as f32
+        * match video_info.chroma_sampling {
+            ChromaSampling::Cs420 => 1.5,
+            ChromaSampling::Cs422 => 2.,
+            ChromaSampling::Cs444 => 3.,
+            ChromaSampling::Cs400 => 1.,
+        }) as u64
 }

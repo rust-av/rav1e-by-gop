@@ -4,7 +4,7 @@ mod encode;
 mod muxer;
 
 use self::encode::perform_encode;
-use crate::encode::load_progress_file;
+use crate::encode::{load_progress_file, MemoryUsage};
 use clap::{App, Arg, ArgMatches};
 use console::style;
 use std::collections::BTreeSet;
@@ -13,6 +13,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{stdin, Read};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct CliOptions {
@@ -24,6 +25,7 @@ pub struct CliOptions {
     max_keyint: u64,
     max_threads: Option<usize>,
     verbose: bool,
+    memory_usage: MemoryUsage,
 }
 
 impl From<&ArgMatches<'_>> for CliOptions {
@@ -44,6 +46,10 @@ impl From<&ArgMatches<'_>> for CliOptions {
                 .value_of("MAX_THREADS")
                 .map(|threads| threads.parse().unwrap()),
             verbose: matches.is_present("VERBOSE"),
+            memory_usage: matches
+                .value_of("MEMORY_LIMIT")
+                .map(|val| MemoryUsage::from_str(val).expect("Invalid option for memory limit"))
+                .unwrap_or_default(),
         }
     }
 }
@@ -73,6 +79,9 @@ impl fmt::Display for Input {
 }
 
 fn main() {
+    // Thanks, borrow checker
+    let mem_usage_default = MemoryUsage::default().to_string();
+
     let matches = App::new("rav1e-by-gop")
         .arg(
             Arg::with_name("INPUT")
@@ -131,6 +140,14 @@ fn main() {
                 .help("Limit the maximum number of threads that can be used")
                 .long("threads")
                 .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("MEMORY_LIMIT")
+                .help("Limit the number of threads based on the amount of memory on the system")
+                .long("memory")
+                .takes_value(true)
+                .possible_values(&["light", "heavy", "unlimited"])
+                .default_value(&mem_usage_default),
         )
         .arg(
             Arg::with_name("FORCE_RESUME")
