@@ -33,16 +33,9 @@ To configure rav1e settings (only some settings are configurable):
 
 `rav1e-by-gop input.y4m -s 3 --qp 50 --min-keyint 12 --keyint 360 -o output.ivf`
 
-To pipe in input
-(this is non-standard,
-due to having to read through input twice):
+To pipe in input:
 
-`rav1e-by-gop "vspipe --y4m input.vpy -" --pipe -o output.ivf`
-
-To use a faster input pipe for the analysis pass
-(useful if your input pipe has expensive filtering):
-
-`rav1e-by-gop "vspipe --y4m input.vpy -" --pipe --fast-fp "vspipe --y4m faster_input.vpy -" -o output.ivf`
+`vspipe --y4m input.vpy - | rav1e-by-gop - -o output.ivf`
 
 To limit the number of threads
 (this tool will never use more than the number of CPUs):
