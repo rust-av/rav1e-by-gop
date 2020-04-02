@@ -7,13 +7,14 @@ use crate::encode::progress::{watch_progress_receivers, ProgressChannel, Progres
 use crate::encode::stats::{ProgressInfo, SerializableProgressInfo};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
+use anyhow::Result;
 use clap::ArgMatches;
 use console::{style, Term};
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
 use rav1e::prelude::*;
+use rayon::{scope, Scope, ThreadPoolBuilder};
 use serde::export::Formatter;
 use std::collections::BTreeSet;
-use std::error::Error;
 use std::fmt::Display;
 use std::fs::remove_file;
 use std::fs::File;
@@ -25,7 +26,6 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::{cmp, fmt, thread};
 use systemstat::{ByteSize, Platform, System};
-use threadpool::ThreadPool;
 use y4m::Decoder;
 
 pub fn perform_encode(
@@ -33,40 +33,44 @@ pub fn perform_encode(
     next_analysis_frame: usize,
     opts: &CliOptions,
     progress: Option<ProgressInfo>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let reader = opts.input.as_reader()?;
     let dec = y4m::decode(reader).expect("input is not a y4m file");
     let video_info = get_video_details(&dec);
-
-    if video_info.bit_depth == 8 {
-        perform_encode_inner::<u8, _>(
-            keyframes,
-            next_analysis_frame,
-            opts,
-            progress,
-            dec,
-            video_info,
-        )
-    } else {
-        perform_encode_inner::<u16, _>(
-            keyframes,
-            next_analysis_frame,
-            opts,
-            progress,
-            dec,
-            video_info,
-        )
-    }
+    scope(|s| {
+        if video_info.bit_depth == 8 {
+            perform_encode_inner::<u8, _>(
+                s,
+                keyframes,
+                next_analysis_frame,
+                opts,
+                progress,
+                dec,
+                video_info,
+            )
+        } else {
+            perform_encode_inner::<u16, _>(
+                s,
+                keyframes,
+                next_analysis_frame,
+                opts,
+                progress,
+                dec,
+                video_info,
+            )
+        }
+    })
 }
 
 pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
+    s: &Scope,
     keyframes: BTreeSet<usize>,
     next_analysis_frame: usize,
     opts: &CliOptions,
     progress: Option<ProgressInfo>,
     dec: Decoder<R>,
     video_info: VideoDetails,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     eprintln!(
         "Using {} decoder: {}p @ {} fps, {}, {}",
         style("y4m").cyan(),
@@ -81,7 +85,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
     );
 
     let num_threads = decide_thread_count(opts, &video_info);
-    let mut thread_pool = ThreadPool::new(num_threads);
+    let thread_pool = ThreadPoolBuilder::new().num_threads(num_threads).build()?;
     eprintln!("Using {} encoder threads", style(num_threads).cyan());
 
     let overall_progress = if let Some(progress) = progress {
@@ -122,7 +126,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
         .collect::<Vec<_>>();
     let slots_ref = slots.clone();
     let input_finished_receiver = input_finished_channel.1.clone();
-    thread::spawn(move || {
+    s.spawn(move |_| {
         watch_progress_receivers(
             receivers,
             slots_ref,
@@ -135,7 +139,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
 
     let opts_ref = opts.clone();
     let analyzer_sender = analyzer_channel.0.clone();
-    thread::spawn(move || {
+    s.spawn(move |_| {
         run_first_pass(
             dec,
             opts_ref,
@@ -161,33 +165,28 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
         .expect("Failed to create segment output");
 
     let mut num_segments = 0;
-    loop {
-        match analyzer_channel.1.try_recv() {
-            Ok(Some(data)) => {
-                let slot = data.slot_no;
-                num_segments = cmp::max(num_segments, data.segment_no + 1);
-                encode_segment(
-                    opts,
-                    video_info,
-                    data,
-                    &mut thread_pool,
-                    progress_channels[slot].0.clone(),
-                )?;
-            }
-            Ok(None) => {
-                // No more input frames, finish.
-                input_finished_channel.0.send(())?;
-                break;
-            }
-            Err(TryRecvError::Empty) => {
-                sleep(Duration::from_millis(1000));
-            }
-            Err(e) => {
-                return Err(e.into());
+    thread_pool.scope(|s| -> Result<()> {
+        loop {
+            match analyzer_channel.1.try_recv() {
+                Ok(Some(data)) => {
+                    let slot = data.slot_no;
+                    num_segments = cmp::max(num_segments, data.segment_no + 1);
+                    encode_segment(opts, video_info, data, s, progress_channels[slot].0.clone())?;
+                }
+                Ok(None) => {
+                    // No more input frames, finish.
+                    input_finished_channel.0.send(())?;
+                    return Ok(());
+                }
+                Err(TryRecvError::Empty) => {
+                    sleep(Duration::from_millis(1000));
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
             }
         }
-    }
-    thread_pool.join();
+    })?;
 
     mux_output_files(&opts.output, num_segments)?;
 
@@ -198,9 +197,9 @@ fn encode_segment<T: Pixel>(
     opts: &CliOptions,
     video_info: VideoDetails,
     data: SegmentData<T>,
-    thread_pool: &mut ThreadPool,
+    s: &Scope,
     progress_sender: ProgressSender,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let progress = ProgressInfo::new(
         Rational {
             num: video_info.time_base.den,
@@ -238,7 +237,7 @@ fn encode_segment<T: Pixel>(
     let output_file = opts.output.to_owned();
     let segment_idx = data.segment_no + 1;
 
-    thread_pool.execute(move || {
+    s.spawn(move |_| {
         let source = Source {
             frames,
             sent_count: 0,
@@ -333,7 +332,7 @@ fn do_encode<T: Pixel>(
     segment_idx: usize,
     mut progress: ProgressInfo,
     progress_sender: ProgressSender,
-) -> Result<ProgressInfo, Box<dyn Error>> {
+) -> Result<ProgressInfo> {
     let mut ctx: Context<T> = cfg.new_context()?;
     let _ = progress_sender.send(Some(progress.clone()));
 
@@ -372,7 +371,7 @@ fn process_frame<T: Pixel>(
     ctx: &mut Context<T>,
     source: &mut Source<T>,
     output: &mut dyn Muxer,
-) -> Result<Option<Vec<Packet<T>>>, Box<dyn Error>> {
+) -> Result<Option<Vec<Packet<T>>>> {
     let mut packets = Vec::new();
     let pkt_wrapped = ctx.receive_packet();
     match pkt_wrapped {
@@ -400,7 +399,7 @@ fn process_frame<T: Pixel>(
     Ok(Some(packets))
 }
 
-fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<dyn Error>> {
+fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<()> {
     let mut out = BufWriter::new(File::create(out_filename)?);
     let segments =
         (0..=num_segments).map(|seg_idx| get_segment_output_filename(out_filename, seg_idx));
