@@ -11,8 +11,8 @@ use anyhow::Result;
 use clap::ArgMatches;
 use console::{style, Term};
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
-use rayon::{scope, Scope};
 use rav1e::prelude::*;
+use rayon::{scope, Scope, ThreadPoolBuilder};
 use serde::export::Formatter;
 use std::collections::BTreeSet;
 use std::fmt::Display;
@@ -26,7 +26,6 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::{cmp, fmt, thread};
 use systemstat::{ByteSize, Platform, System};
-use threadpool::ThreadPool;
 use y4m::Decoder;
 
 pub fn perform_encode(
@@ -86,7 +85,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
     );
 
     let num_threads = decide_thread_count(opts, &video_info);
-    let mut thread_pool = ThreadPool::new(num_threads);
+    let thread_pool = ThreadPoolBuilder::new().num_threads(num_threads).build()?;
     eprintln!("Using {} encoder threads", style(num_threads).cyan());
 
     let overall_progress = if let Some(progress) = progress {
@@ -166,33 +165,28 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
         .expect("Failed to create segment output");
 
     let mut num_segments = 0;
-    loop {
-        match analyzer_channel.1.try_recv() {
-            Ok(Some(data)) => {
-                let slot = data.slot_no;
-                num_segments = cmp::max(num_segments, data.segment_no + 1);
-                encode_segment(
-                    opts,
-                    video_info,
-                    data,
-                    &mut thread_pool,
-                    progress_channels[slot].0.clone(),
-                )?;
-            }
-            Ok(None) => {
-                // No more input frames, finish.
-                input_finished_channel.0.send(())?;
-                break;
-            }
-            Err(TryRecvError::Empty) => {
-                sleep(Duration::from_millis(1000));
-            }
-            Err(e) => {
-                return Err(e.into());
+    thread_pool.scope(|s| -> Result<()> {
+        loop {
+            match analyzer_channel.1.try_recv() {
+                Ok(Some(data)) => {
+                    let slot = data.slot_no;
+                    num_segments = cmp::max(num_segments, data.segment_no + 1);
+                    encode_segment(opts, video_info, data, s, progress_channels[slot].0.clone())?;
+                }
+                Ok(None) => {
+                    // No more input frames, finish.
+                    input_finished_channel.0.send(())?;
+                    return Ok(());
+                }
+                Err(TryRecvError::Empty) => {
+                    sleep(Duration::from_millis(1000));
+                }
+                Err(e) => {
+                    return Err(e.into());
+                }
             }
         }
-    }
-    thread_pool.join();
+    })?;
 
     mux_output_files(&opts.output, num_segments)?;
 
@@ -203,7 +197,7 @@ fn encode_segment<T: Pixel>(
     opts: &CliOptions,
     video_info: VideoDetails,
     data: SegmentData<T>,
-    thread_pool: &mut ThreadPool,
+    s: &Scope,
     progress_sender: ProgressSender,
 ) -> Result<()> {
     let progress = ProgressInfo::new(
@@ -243,7 +237,7 @@ fn encode_segment<T: Pixel>(
     let output_file = opts.output.to_owned();
     let segment_idx = data.segment_no + 1;
 
-    thread_pool.execute(move || {
+    s.spawn(move |_| {
         let source = Source {
             frames,
             sent_count: 0,
