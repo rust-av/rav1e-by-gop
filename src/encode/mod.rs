@@ -509,8 +509,8 @@ fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
     if let Ok(sys_memory) = sys_memory {
         let bytes_per_frame = bytes_per_frame(video_info);
         // Conservatively account for encoding overhead.
-        // May readjust in the future if rav1e memory usage decreases.
-        let bytes_per_segment = opts.max_keyint * bytes_per_frame * 35 / 10;
+        // May readjust in the future.
+        let bytes_per_segment = opts.max_keyint * bytes_per_frame * 3;
         let total = sys_memory.total.as_u64();
         match opts.memory_usage {
             MemoryUsage::Light => {
