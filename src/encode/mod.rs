@@ -276,7 +276,7 @@ pub fn load_progress_file(outfile: &Path, matches: &ArgMatches) -> Option<Progre
             true
         } else if matches.is_present("FORCE_OVERWRITE") {
             false
-        } else if term_err.is_term() {
+        } else if term_err.is_term() && matches.value_of("INPUT") != Some("-") {
             let resolved;
             loop {
                 let input = dialoguer::Input::<String>::new()
