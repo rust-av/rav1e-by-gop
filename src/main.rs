@@ -5,10 +5,10 @@ mod muxer;
 
 use self::encode::perform_encode;
 use crate::encode::{load_progress_file, MemoryUsage};
-use anyhow::{ensure, Result};
 use clap::{App, Arg, ArgMatches};
 use console::style;
 use std::collections::BTreeSet;
+use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io::{stdin, Read};
@@ -61,7 +61,7 @@ pub enum Input {
 }
 
 impl Input {
-    pub fn as_reader(&self) -> Result<Box<dyn Read + Send>> {
+    pub fn as_reader(&self) -> Result<Box<dyn Read + Send>, Box<dyn Error>> {
         Ok(match self {
             Input::File(filename) => Box::new(File::open(filename)?),
             Input::Stdin => Box::new(stdin()),
@@ -78,7 +78,7 @@ impl fmt::Display for Input {
     }
 }
 
-fn main() -> Result<()> {
+fn main() {
     // Thanks, borrow checker
     let mem_usage_default = MemoryUsage::default().to_string();
 
@@ -169,15 +169,15 @@ fn main() -> Result<()> {
         )
         .get_matches();
     let opts = CliOptions::from(&matches);
-    ensure!(
+    assert!(
         opts.output.extension().and_then(|ext| ext.to_str()) == Some("ivf"),
         "Output must be a .ivf file"
     );
-    ensure!(
+    assert!(
         opts.max_keyint >= opts.min_keyint,
         "Max keyint must be greater than or equal to min keyint"
     );
-    ensure!(opts.qp <= 255, "QP must be between 0-255");
+    assert!(opts.qp <= 255, "QP must be between 0-255");
 
     let progress = load_progress_file(&opts.output, &matches);
     let (keyframes, next_analysis_frame) = if let Some(ref progress) = progress {
@@ -196,6 +196,4 @@ fn main() -> Result<()> {
     perform_encode(keyframes, next_analysis_frame, &opts, progress).expect("Failed encoding");
 
     eprintln!("{}", style("Finished!").yellow());
-
-    Ok(())
 }

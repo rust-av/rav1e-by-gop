@@ -10,8 +10,8 @@
 mod ivf;
 
 use self::ivf::IvfMuxer;
-use anyhow::Result;
 use rav1e::prelude::*;
+use std::error::Error;
 use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
@@ -30,7 +30,7 @@ pub trait Muxer {
     fn flush(&mut self) -> io::Result<()>;
 }
 
-pub fn create_muxer(path: &Path) -> Result<Box<dyn Muxer>> {
+pub fn create_muxer(path: &Path) -> Result<Box<dyn Muxer>, Box<dyn Error>> {
     let ext = path
         .extension()
         .and_then(OsStr::to_str)
