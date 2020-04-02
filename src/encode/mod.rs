@@ -339,12 +339,20 @@ fn do_encode<T: Pixel>(
     let mut output = create_muxer(&get_segment_output_filename(&output_file, segment_idx))
         .expect("Failed to create segment output");
 
-    while let Some(packets) = process_frame(&mut ctx, &mut source, &mut *output)? {
-        for packet in packets {
-            progress.add_packet(packet);
-        }
-        let _ = progress_sender.send(Some(progress.clone()));
-        output.flush().unwrap();
+    loop {
+        match process_frame(&mut ctx, &mut source, &mut *output)? {
+            ProcessFrameResult::Packet(packet) => {
+                progress.add_packet(*packet);
+                let _ = progress_sender.send(Some(progress.clone()));
+            }
+            ProcessFrameResult::NoPacket => {
+                // Next iteration
+            }
+            ProcessFrameResult::EndOfSegment => {
+                output.flush().unwrap();
+                break;
+            }
+        };
     }
 
     Ok(progress)
@@ -367,17 +375,22 @@ impl<T: Pixel> Source<T> {
     }
 }
 
+enum ProcessFrameResult<T: Pixel> {
+    Packet(Box<Packet<T>>),
+    NoPacket,
+    EndOfSegment,
+}
+
 fn process_frame<T: Pixel>(
     ctx: &mut Context<T>,
     source: &mut Source<T>,
     output: &mut dyn Muxer,
-) -> Result<Option<Vec<Packet<T>>>> {
-    let mut packets = Vec::new();
+) -> Result<ProcessFrameResult<T>> {
     let pkt_wrapped = ctx.receive_packet();
     match pkt_wrapped {
         Ok(pkt) => {
             output.write_frame(pkt.input_frameno as u64, pkt.data.as_ref(), pkt.frame_type);
-            packets.push(pkt);
+            return Ok(ProcessFrameResult::Packet(Box::new(pkt)));
         }
         Err(EncoderStatus::NeedMoreData) => {
             source.read_frame(ctx);
@@ -386,7 +399,7 @@ fn process_frame<T: Pixel>(
             unreachable!();
         }
         Err(EncoderStatus::LimitReached) => {
-            return Ok(None);
+            return Ok(ProcessFrameResult::EndOfSegment);
         }
         e @ Err(EncoderStatus::Failure) => {
             e?;
@@ -396,7 +409,7 @@ fn process_frame<T: Pixel>(
         }
         Err(EncoderStatus::Encoded) => {}
     }
-    Ok(Some(packets))
+    Ok(ProcessFrameResult::NoPacket)
 }
 
 fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<()> {
