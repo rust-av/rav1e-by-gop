@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::fs::remove_file;
 use std::fs::File;
-use std::io::{BufWriter, Read};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -263,13 +263,13 @@ fn encode_segment<T: Pixel>(
 }
 
 fn update_progress_file(output: &Path, progress: &ProgressInfo) {
-    let progress_file =
+    let data = rmp_serde::to_vec(&stats::SerializableProgressInfo::from(progress))
+        .expect("Failed to serialize data");
+    let mut progress_file =
         File::create(get_progress_filename(&output)).expect("Failed to open progress file");
-    serde_json::to_writer(
-        progress_file,
-        &stats::SerializableProgressInfo::from(progress),
-    )
-    .expect("Failed to write to progress file");
+    progress_file
+        .write_all(&data)
+        .expect("Failed to write to progress file");
 }
 
 fn get_segment_output_filename(output: &Path, segment_idx: usize) -> PathBuf {
@@ -317,7 +317,7 @@ pub fn load_progress_file(outfile: &Path, matches: &ArgMatches) -> Option<Progre
         if resume {
             let progress_file =
                 File::open(get_progress_filename(outfile)).expect("Failed to open progress file");
-            let progress_input: SerializableProgressInfo = serde_json::from_reader(progress_file)
+            let progress_input: SerializableProgressInfo = rmp_serde::from_read(&progress_file)
                 .expect("Progress file did not contain valid JSON");
             Some(ProgressInfo::from(&progress_input))
         } else {
@@ -329,7 +329,7 @@ pub fn load_progress_file(outfile: &Path, matches: &ArgMatches) -> Option<Progre
 }
 
 fn get_progress_filename(output: &Path) -> PathBuf {
-    output.with_extension("progress.json")
+    output.with_extension("progress.data")
 }
 
 fn do_encode<T: Pixel>(
