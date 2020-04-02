@@ -13,6 +13,7 @@ av-scenechange = { version = "0.4", default-features = false, features = ["serde
 clap = "2"
 console = "0.10.0"
 crossbeam-channel = "0.4"
+crossbeam-utils = "0.7"
 dialoguer = "0.5"
 indicatif = "0.14"
 itertools = "0.9"
