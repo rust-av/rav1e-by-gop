@@ -534,11 +534,10 @@ fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
 fn bytes_per_frame(video_info: &VideoDetails) -> u64 {
     let bytes_per_plane =
         video_info.width * video_info.height * if video_info.bit_depth > 8 { 2 } else { 1 };
-    (bytes_per_plane as f32
-        * match video_info.chroma_sampling {
-            ChromaSampling::Cs420 => 1.5,
-            ChromaSampling::Cs422 => 2.,
-            ChromaSampling::Cs444 => 3.,
-            ChromaSampling::Cs400 => 1.,
-        }) as u64
+    (match video_info.chroma_sampling {
+        ChromaSampling::Cs420 => bytes_per_plane * 3 / 2,
+        ChromaSampling::Cs422 => bytes_per_plane * 2,
+        ChromaSampling::Cs444 => bytes_per_plane * 3,
+        ChromaSampling::Cs400 => bytes_per_plane,
+    }) as u64
 }
