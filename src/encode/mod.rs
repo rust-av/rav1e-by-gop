@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::ArgMatches;
 use console::{style, Term};
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
-use crossbeam_utils::thread::{scope, Scope};
+use rayon::{scope, Scope};
 use rav1e::prelude::*;
 use serde::export::Formatter;
 use std::collections::BTreeSet;
@@ -61,7 +61,6 @@ pub fn perform_encode(
             )
         }
     })
-    .unwrap()
 }
 
 pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
