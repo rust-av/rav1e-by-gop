@@ -7,6 +7,7 @@ use crate::encode::progress::{watch_progress_receivers, ProgressChannel, Progres
 use crate::encode::stats::{ProgressInfo, SerializableProgressInfo};
 use crate::muxer::{create_muxer, Muxer};
 use crate::CliOptions;
+use anyhow::Result;
 use clap::ArgMatches;
 use console::{style, Term};
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
@@ -14,7 +15,6 @@ use crossbeam_utils::thread::{scope, Scope};
 use rav1e::prelude::*;
 use serde::export::Formatter;
 use std::collections::BTreeSet;
-use std::error::Error;
 use std::fmt::Display;
 use std::fs::remove_file;
 use std::fs::File;
@@ -34,7 +34,7 @@ pub fn perform_encode(
     next_analysis_frame: usize,
     opts: &CliOptions,
     progress: Option<ProgressInfo>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let reader = opts.input.as_reader()?;
     let dec = y4m::decode(reader).expect("input is not a y4m file");
     let video_info = get_video_details(&dec);
@@ -72,7 +72,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
     progress: Option<ProgressInfo>,
     dec: Decoder<R>,
     video_info: VideoDetails,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     eprintln!(
         "Using {} decoder: {}p @ {} fps, {}, {}",
         style("y4m").cyan(),
@@ -206,7 +206,7 @@ fn encode_segment<T: Pixel>(
     data: SegmentData<T>,
     thread_pool: &mut ThreadPool,
     progress_sender: ProgressSender,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let progress = ProgressInfo::new(
         Rational {
             num: video_info.time_base.den,
@@ -339,7 +339,7 @@ fn do_encode<T: Pixel>(
     segment_idx: usize,
     mut progress: ProgressInfo,
     progress_sender: ProgressSender,
-) -> Result<ProgressInfo, Box<dyn Error>> {
+) -> Result<ProgressInfo> {
     let mut ctx: Context<T> = cfg.new_context()?;
     let _ = progress_sender.send(Some(progress.clone()));
 
@@ -378,7 +378,7 @@ fn process_frame<T: Pixel>(
     ctx: &mut Context<T>,
     source: &mut Source<T>,
     output: &mut dyn Muxer,
-) -> Result<Option<Vec<Packet<T>>>, Box<dyn Error>> {
+) -> Result<Option<Vec<Packet<T>>>> {
     let mut packets = Vec::new();
     let pkt_wrapped = ctx.receive_packet();
     match pkt_wrapped {
@@ -406,7 +406,7 @@ fn process_frame<T: Pixel>(
     Ok(Some(packets))
 }
 
-fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<(), Box<dyn Error>> {
+fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<()> {
     let mut out = BufWriter::new(File::create(out_filename)?);
     let segments =
         (0..=num_segments).map(|seg_idx| get_segment_output_filename(out_filename, seg_idx));
