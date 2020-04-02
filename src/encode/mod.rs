@@ -10,6 +10,7 @@ use crate::CliOptions;
 use clap::ArgMatches;
 use console::{style, Term};
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
+use crossbeam_utils::thread::{scope, Scope};
 use rav1e::prelude::*;
 use serde::export::Formatter;
 use std::collections::BTreeSet;
@@ -37,29 +38,34 @@ pub fn perform_encode(
     let reader = opts.input.as_reader()?;
     let dec = y4m::decode(reader).expect("input is not a y4m file");
     let video_info = get_video_details(&dec);
-
-    if video_info.bit_depth == 8 {
-        perform_encode_inner::<u8, _>(
-            keyframes,
-            next_analysis_frame,
-            opts,
-            progress,
-            dec,
-            video_info,
-        )
-    } else {
-        perform_encode_inner::<u16, _>(
-            keyframes,
-            next_analysis_frame,
-            opts,
-            progress,
-            dec,
-            video_info,
-        )
-    }
+    scope(|s| {
+        if video_info.bit_depth == 8 {
+            perform_encode_inner::<u8, _>(
+                s,
+                keyframes,
+                next_analysis_frame,
+                opts,
+                progress,
+                dec,
+                video_info,
+            )
+        } else {
+            perform_encode_inner::<u16, _>(
+                s,
+                keyframes,
+                next_analysis_frame,
+                opts,
+                progress,
+                dec,
+                video_info,
+            )
+        }
+    })
+    .unwrap()
 }
 
 pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
+    s: &Scope,
     keyframes: BTreeSet<usize>,
     next_analysis_frame: usize,
     opts: &CliOptions,
@@ -122,7 +128,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
         .collect::<Vec<_>>();
     let slots_ref = slots.clone();
     let input_finished_receiver = input_finished_channel.1.clone();
-    thread::spawn(move || {
+    s.spawn(move |_| {
         watch_progress_receivers(
             receivers,
             slots_ref,
@@ -135,7 +141,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
 
     let opts_ref = opts.clone();
     let analyzer_sender = analyzer_channel.0.clone();
-    thread::spawn(move || {
+    s.spawn(move |_| {
         run_first_pass(
             dec,
             opts_ref,
