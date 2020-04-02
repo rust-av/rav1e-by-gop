@@ -9,9 +9,9 @@
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
 use super::Muxer;
+use anyhow::Result;
 use ivf::*;
 use rav1e::prelude::*;
-use std::error::Error;
 use std::fs::File;
 use std::io;
 use std::io::Write;
@@ -47,7 +47,7 @@ impl Muxer for IvfMuxer {
 }
 
 impl IvfMuxer {
-    pub fn open(path: &str) -> Result<Box<dyn Muxer>, Box<dyn Error>> {
+    pub fn open(path: &str) -> Result<Box<dyn Muxer>> {
         let ivf = IvfMuxer {
             output: match path {
                 "-" => Box::new(std::io::stdout()),

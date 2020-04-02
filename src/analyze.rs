@@ -1,10 +1,10 @@
 use crate::decode::{get_video_details, process_raw_frame, read_raw_frame, DecodeError};
 use crate::CliOptions;
+use anyhow::Result;
 use av_scenechange::{DetectionOptions, SceneChangeDetector};
 use crossbeam_channel::{Receiver, Sender};
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
@@ -36,7 +36,7 @@ pub(crate) fn run_first_pass<T: Pixel, R: Read + Send>(
     next_frameno: usize,
     known_keyframes: BTreeSet<usize>,
     skipped_segments: BTreeSet<usize>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let sc_opts = DetectionOptions {
         fast_analysis: opts.speed >= 10,
         ignore_flashes: false,
@@ -89,7 +89,7 @@ pub(crate) fn run_first_pass<T: Pixel, R: Read + Send>(
                             break;
                         }
                         Err(e) => {
-                            return Err(Box::new(e));
+                            return Err(e.into());
                         }
                     }
                 }
@@ -107,7 +107,7 @@ pub(crate) fn run_first_pass<T: Pixel, R: Read + Send>(
                             break;
                         }
                         Err(e) => {
-                            return Err(Box::new(e));
+                            return Err(e.into());
                         }
                     };
                 }
@@ -127,7 +127,7 @@ pub(crate) fn run_first_pass<T: Pixel, R: Read + Send>(
                             break;
                         }
                         Err(e) => {
-                            return Err(Box::new(e));
+                            return Err(e.into());
                         }
                     };
                 }
