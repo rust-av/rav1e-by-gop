@@ -510,7 +510,13 @@ fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
         let bytes_per_frame = bytes_per_frame(video_info);
         // Conservatively account for encoding overhead.
         // May readjust in the future.
-        let bytes_per_segment = opts.max_keyint * bytes_per_frame * 3;
+        let bytes_per_segment = if bytes_per_frame == 1 {
+            opts.max_keyint * bytes_per_frame * 3
+        } else {
+            // HBD doesn't have a full 100% increase,
+            // so be a little more generous with it
+            opts.max_keyint * bytes_per_frame * 25 / 10
+        };
         let total = sys_memory.total.as_u64();
         match opts.memory_usage {
             MemoryUsage::Light => {
