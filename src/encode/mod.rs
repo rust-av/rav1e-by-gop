@@ -510,7 +510,7 @@ fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
         let bytes_per_frame = bytes_per_frame(video_info);
         // Conservatively account for encoding overhead.
         // May readjust in the future.
-        let bytes_per_segment = if bytes_per_frame == 1 {
+        let bytes_per_segment = if video_info.bit_depth == 8 {
             opts.max_keyint * bytes_per_frame * 3
         } else {
             // HBD doesn't have a full 100% increase,
