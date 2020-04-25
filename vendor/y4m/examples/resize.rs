@@ -27,7 +27,7 @@ fn main() {
         );
     }
     let (w1, h1) = (decoder.get_width(), decoder.get_height());
-    let dst_dims: Vec<_> = args[2].split("x").map(|s| s.parse().unwrap()).collect();
+    let dst_dims: Vec<_> = args[2].split('x').map(|s| s.parse().unwrap()).collect();
     let (w2, h2) = (dst_dims[0], dst_dims[1]);
     let mut resizer = resize::new(w1, h1, w2, h2, Gray8, Triangle);
     let mut dst = vec![0; w2 * h2];
@@ -42,16 +42,11 @@ fn main() {
         .write_header(&mut outfh)
         .unwrap();
 
-    loop {
-        match decoder.read_frame() {
-            Ok(frame) => {
-                resizer.resize(frame.get_y_plane(), &mut dst);
-                let out_frame = y4m::Frame::new([&dst, &[], &[]], None);
-                if encoder.write_frame(&out_frame).is_err() {
-                    break;
-                }
-            }
-            _ => break,
+    while let Ok(frame) = decoder.read_frame() {
+        resizer.resize(frame.get_y_plane(), &mut dst);
+        let out_frame = y4m::Frame::new([&dst, &[], &[]], None);
+        if encoder.write_frame(&out_frame).is_err() {
+            break;
         }
     }
 }

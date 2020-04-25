@@ -1,0 +1,18 @@
+[package]
+name = "rav1e-worker"
+version = "0.1.0"
+authors = ["Josh Holmer <jholmer.in@gmail.com>"]
+edition = "2018"
+license = "MIT"
+description = "A server to enable distributed encoding with rav1e-by-gop"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+anyhow = "1"
+clap = "2"
+ivf = "0.1"
+num_cpus = "1"
+rav1e-by-gop = { path = "../rav1e-by-gop", default-features = false }
+rmp-serde = "0.14"
+serde = { version = "1", features = ["derive"] }
+v_frame = "0.1"

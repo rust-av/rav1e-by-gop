@@ -43,6 +43,14 @@ To limit the number of threads
 
 `rav1e-by-gop input.y4m --threads 4 -o output.ivf`
 
+## Distributed encoding
+
+By default, the rav1e-by-gop client can run on a single machine.
+However, it can be set up to take advantage of remote machines
+running the rav1e worker for distributed encoding.
+
+TODO: Usage details
+
 ## Limitations
 
 - Only supports one-pass QP mode
