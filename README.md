@@ -49,7 +49,49 @@ By default, the rav1e-by-gop client can run on a single machine.
 However, it can be set up to take advantage of remote machines
 running the rav1e worker for distributed encoding.
 
-TODO: Usage details
+### Server setup
+
+rav1e-worker runs a server that listens for connections from rav1e-by-gop,
+then uses worker threads to encode segments for the remote machines.
+
+By default, rav1e-worker will accept insecure connections,
+because unfortunately self-signed certs will not work.
+
+You can configure rav1e-worker to use secure TLS connections.
+If you have a signed TLS certificate you would like to use,
+or would like to get one for free from Let's Encrypt,
+you can create an identity file for rav1e-worker to read
+with the following command:
+
+```
+openssl pkcs12 -export -out identity.p12 -inkey /etc/letsencrypt/live/mydomain.example/privkey.pem -in /etc/letsencrypt/live/mydomain.example/cert.pem -certfile /etc/letsencrypt/live/mydomain.example/chain.pem
+```
+
+You can tell rav1e-worker to accept TLS connections by
+by setting the path to the identity file
+in the `IDENTITY_FILE` environment variable.
+If your identity file has a password, you can set the password
+via the `IDENTITY_PASSWORD` environment variable. By default,
+a passwordless identity file is assumed.
+
+You must also create a password for clients to use to connect to the server.
+This is mandatory. You should set this password to the `SERVER_PASSWORD` environment variable.
+It is highly recommended to use a secure password generator like [this one](https://correcthorsebatterystaple.net/).
+
+You can then run `rav1e-worker`, which will listen by default on port 13415,
+and spawn workers up to the number of logical CPU cores.
+You can configure which IP and port to listen on as well as how many workers
+to spawn via CLI args to rav1e-worker.
+
+### Client setup
+
+You can tell rav1e-by-gop to connect to remote workers by using a `workers.toml` file.
+There is an example of this file in this repository.
+By default, the client will look in the current working directory for the file.
+You can override it by using the `--workers /path/to/workers.toml` CLI flag.
+
+rav1e-by-gop will by default use the local worker threads as well.
+You can disable local encoding entirely with the `--no-local` flag.
 
 ## Limitations
 

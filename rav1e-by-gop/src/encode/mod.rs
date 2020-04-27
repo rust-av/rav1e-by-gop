@@ -3,17 +3,19 @@ pub mod stats;
 pub use self::stats::*;
 
 use super::VideoDetails;
-use crate::muxer::{create_muxer, Muxer};
-use crate::SegmentData;
+use crate::muxer::create_muxer;
+use crate::{build_encoder_config, SegmentData};
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
+use systemstat::data::ByteSize;
 use threadpool::ThreadPool;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EncodeOptions {
     pub speed: usize,
     pub qp: usize,
@@ -41,25 +43,10 @@ pub fn encode_segment<T: Pixel>(
         data.segment_no + 1,
         data.next_analysis_frame,
     );
-    let _ = progress_sender.send(Some(progress.clone()));
+    let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
 
     let frames = data.frames.into_iter().map(Arc::new).collect::<Vec<_>>();
-
-    let mut enc_config = EncoderConfig::with_speed_preset(opts.speed);
-    enc_config.width = video_info.width;
-    enc_config.height = video_info.height;
-    enc_config.bit_depth = video_info.bit_depth;
-    enc_config.chroma_sampling = video_info.chroma_sampling;
-    enc_config.chroma_sample_position = video_info.chroma_sample_position;
-    enc_config.time_base = video_info.time_base;
-    enc_config.quantizer = opts.qp;
-    enc_config.tiles = 1;
-    enc_config.min_key_frame_interval = 0;
-    enc_config.max_key_frame_interval = u16::max_value() as u64;
-    enc_config.speed_settings.no_scene_detection = true;
-    let cfg = Config::new()
-        .with_encoder_config(enc_config)
-        .with_threads(1);
+    let cfg = build_encoder_config(opts.speed, opts.qp, video_info);
 
     thread_pool.execute(move || {
         let source = Source {
@@ -80,15 +67,20 @@ fn do_encode<T: Pixel>(
     progress_sender: ProgressSender,
 ) -> Result<ProgressInfo> {
     let mut ctx: Context<T> = cfg.new_context()?;
-    let _ = progress_sender.send(Some(progress.clone()));
+    let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
 
     let mut output = create_muxer(&segment_output_file).expect("Failed to create segment output");
 
     loop {
-        match process_frame(&mut ctx, &mut source, &mut *output)? {
+        match process_frame(&mut ctx, &mut source)? {
             ProcessFrameResult::Packet(packet) => {
+                output.write_frame(
+                    packet.input_frameno as u64,
+                    packet.data.as_ref(),
+                    packet.frame_type,
+                );
                 progress.add_packet(*packet);
-                let _ = progress_sender.send(Some(progress.clone()));
+                let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
             }
             ProcessFrameResult::NoPacket => {
                 // Next iteration
@@ -103,13 +95,13 @@ fn do_encode<T: Pixel>(
     Ok(progress)
 }
 
-struct Source<T: Pixel> {
-    sent_count: usize,
-    frames: Vec<Arc<Frame<T>>>,
+pub struct Source<T: Pixel> {
+    pub sent_count: usize,
+    pub frames: Vec<Arc<Frame<T>>>,
 }
 
 impl<T: Pixel> Source<T> {
-    fn read_frame(&mut self, ctx: &mut Context<T>) {
+    pub fn read_frame(&mut self, ctx: &mut Context<T>) {
         if self.sent_count == self.frames.len() {
             ctx.flush();
             return;
@@ -120,21 +112,19 @@ impl<T: Pixel> Source<T> {
     }
 }
 
-enum ProcessFrameResult<T: Pixel> {
+pub enum ProcessFrameResult<T: Pixel> {
     Packet(Box<Packet<T>>),
     NoPacket,
     EndOfSegment,
 }
 
-fn process_frame<T: Pixel>(
+pub fn process_frame<T: Pixel>(
     ctx: &mut Context<T>,
     source: &mut Source<T>,
-    output: &mut dyn Muxer,
 ) -> Result<ProcessFrameResult<T>> {
     let pkt_wrapped = ctx.receive_packet();
     match pkt_wrapped {
         Ok(pkt) => {
-            output.write_frame(pkt.input_frameno as u64, pkt.data.as_ref(), pkt.frame_type);
             return Ok(ProcessFrameResult::Packet(Box::new(pkt)));
         }
         Err(EncoderStatus::NeedMoreData) => {
@@ -157,6 +147,14 @@ fn process_frame<T: Pixel>(
     Ok(ProcessFrameResult::NoPacket)
 }
 
-pub type ProgressSender = Sender<Option<ProgressInfo>>;
-pub type ProgressReceiver = Receiver<Option<ProgressInfo>>;
+pub type ProgressSender = Sender<ProgressStatus>;
+pub type ProgressReceiver = Receiver<ProgressStatus>;
 pub type ProgressChannel = (ProgressSender, ProgressReceiver);
+
+pub enum ProgressStatus {
+    Idle,
+    Loading,
+    Compressing(usize),
+    Sending(ByteSize),
+    Encoding(Box<ProgressInfo>),
+}

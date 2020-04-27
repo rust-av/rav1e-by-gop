@@ -1,15 +1,27 @@
 use crate::decode::{get_video_details, process_raw_frame, read_raw_frame, DecodeError};
+use crate::progress::get_segment_output_filename;
+use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
 use crate::CliOptions;
-use anyhow::Result;
 use av_scenechange::{DetectionOptions, SceneChangeDetector};
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_utils::thread::Scope;
+use http::request::Request;
 use itertools::Itertools;
-use rav1e_by_gop::SegmentData;
+use log::{debug, error};
+use rav1e_by_gop::{
+    ActiveConnection, CompressedRawFrameData, EncodeInfo, EncodeOptions, ProgressSender,
+    ProgressStatus, RawFrameData, SegmentData, Slot, SlotRequestMessage, SlotStatus, VideoDetails,
+    WorkerStatusUpdate,
+};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
+use systemstat::ByteSize;
+use tungstenite::{connect, Message};
 use v_frame::frame::Frame;
 use v_frame::pixel::Pixel;
 use y4m::Decoder;
@@ -18,19 +30,38 @@ pub(crate) type AnalyzerSender<T> = Sender<Option<SegmentData<T>>>;
 pub(crate) type AnalyzerReceiver<T> = Receiver<Option<SegmentData<T>>>;
 pub(crate) type AnalyzerChannel<T> = (AnalyzerSender<T>, AnalyzerReceiver<T>);
 
+pub(crate) type RemoteAnalyzerSender = Sender<ActiveConnection>;
+pub(crate) type RemoteAnalyzerReceiver = Receiver<ActiveConnection>;
+pub(crate) type RemoteAnalyzerChannel = (RemoteAnalyzerSender, RemoteAnalyzerReceiver);
+
 pub(crate) type InputFinishedSender = Sender<()>;
 pub(crate) type InputFinishedReceiver = Receiver<()>;
 pub(crate) type InputFinishedChannel = (InputFinishedSender, InputFinishedReceiver);
 
-pub(crate) fn run_first_pass<T: Pixel, R: Read + Send>(
+pub(crate) type SlotReadySender = Sender<Slot>;
+pub(crate) type SlotReadyReceiver = Receiver<Slot>;
+pub(crate) type SlotReadyChannel = (SlotReadySender, SlotReadyReceiver);
+
+pub(crate) fn run_first_pass<
+    T: Pixel + Serialize + DeserializeOwned + Default,
+    R: 'static + Read + Send,
+>(
     mut dec: Decoder<R>,
     opts: CliOptions,
     sender: AnalyzerSender<T>,
+    remote_sender: RemoteAnalyzerSender,
+    progress_senders: Vec<ProgressSender>,
+    remote_progress_senders: Vec<ProgressSender>,
+    input_finished_sender: InputFinishedSender,
+    input_finished_receiver: InputFinishedReceiver,
     pool: Arc<Mutex<Vec<bool>>>,
+    remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     next_frameno: usize,
     known_keyframes: BTreeSet<usize>,
     skipped_segments: BTreeSet<usize>,
-) -> Result<()> {
+    video_info: VideoDetails,
+    scope: &Scope,
+) {
     let sc_opts = DetectionOptions {
         fast_analysis: opts.speed >= 10,
         ignore_flashes: false,
@@ -39,147 +70,365 @@ pub(crate) fn run_first_pass<T: Pixel, R: Read + Send>(
         max_scenecut_distance: Some(opts.max_keyint as usize),
     };
     let cfg = get_video_details(&dec);
-    let mut detector = SceneChangeDetector::new(dec.get_bit_depth(), cfg.chroma_sampling, &sc_opts);
+    let slot_ready_channel: SlotReadyChannel = unbounded();
 
-    let mut analysis_frameno = next_frameno;
-    let mut lookahead_frameno = 0;
-    let mut segment_no = 0;
-    let mut start_frameno;
-    // The first keyframe will always be 0, so get the second keyframe.
-    let mut next_known_keyframe = known_keyframes.iter().nth(1).copied();
-    let mut keyframes: BTreeSet<usize> = known_keyframes.clone();
-    keyframes.insert(0);
-    let mut lookahead_queue = BTreeMap::new();
-    loop {
-        let target_slot;
-        loop {
-            // Wait for an open slot before loading more frames,
-            // to reduce memory usage.
-            let open_slot = pool.lock().unwrap().iter().position(|slot| !*slot);
-            if let Some(slot) = open_slot {
-                target_slot = slot;
-                break;
-            }
+    // Wait for an open slot before loading more frames,
+    // to reduce memory usage.
+    let slot_ready_sender = slot_ready_channel.0.clone();
+    let pool_handle = pool.clone();
+    let speed = opts.speed;
+    let qp = opts.qp;
+    scope.spawn(move |s| {
+        slot_checker_loop::<T>(
+            pool_handle,
+            remote_pool,
+            slot_ready_sender,
+            remote_progress_senders,
+            input_finished_receiver,
+            s,
+            video_info,
+            speed,
+            qp,
+        );
+    });
 
-            sleep(Duration::from_millis(500));
-        }
+    let pool_handle = pool.clone();
+    let slot_ready_listener = slot_ready_channel.1.clone();
+    let lookahead_distance = sc_opts.lookahead_distance;
+    scope
+        .spawn(move |scope| {
+            let mut detector =
+                SceneChangeDetector::new(dec.get_bit_depth(), cfg.chroma_sampling, &sc_opts);
+            let mut analysis_frameno = next_frameno;
+            let mut lookahead_frameno = 0;
+            let mut segment_no = 0;
+            let mut start_frameno;
+            // The first keyframe will always be 0, so get the second keyframe.
+            let mut next_known_keyframe = known_keyframes.iter().nth(1).copied();
+            let mut keyframes: BTreeSet<usize> = known_keyframes.clone();
+            keyframes.insert(0);
+            let mut lookahead_queue = BTreeMap::new();
+            while let Ok(message) = slot_ready_listener.recv() {
+                debug!("Received slot ready message");
+                match message {
+                    Slot::Local(slot) => &progress_senders[slot],
+                    Slot::Remote(ref conn) => &conn.progress_sender,
+                }
+                .send(ProgressStatus::Loading)
+                .unwrap();
 
-        let mut processed_frames: Vec<Frame<T>>;
-        if let Some(next_keyframe) = next_known_keyframe {
-            start_frameno = lookahead_frameno;
-            next_known_keyframe = known_keyframes
-                .iter()
-                .copied()
-                .find(|kf| *kf > next_keyframe);
+                let mut processed_frames: Vec<Frame<T>>;
+                loop {
+                    if let Some(next_keyframe) = next_known_keyframe {
+                        start_frameno = lookahead_frameno;
+                        next_known_keyframe = known_keyframes
+                            .iter()
+                            .copied()
+                            .find(|kf| *kf > next_keyframe);
 
-            // Quickly seek ahead if this is a skipped segment
-            if skipped_segments.contains(&(segment_no + 1)) {
-                while lookahead_frameno < next_keyframe {
-                    match read_raw_frame(&mut dec) {
-                        Ok(_) => {
-                            lookahead_frameno += 1;
+                        // Quickly seek ahead if this is a skipped segment
+                        if skipped_segments.contains(&(segment_no + 1)) {
+                            while lookahead_frameno < next_keyframe {
+                                match read_raw_frame(&mut dec) {
+                                    Ok(_) => {
+                                        lookahead_frameno += 1;
+                                    }
+                                    Err(DecodeError::EOF) => {
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        error!("Decode error: {}", e);
+                                        return;
+                                    }
+                                }
+                            }
+                            segment_no += 1;
+                            continue;
+                        } else {
+                            processed_frames =
+                                Vec::with_capacity(next_keyframe - lookahead_frameno);
+                            while lookahead_frameno < next_keyframe {
+                                match read_raw_frame(&mut dec) {
+                                    Ok(frame) => {
+                                        processed_frames.push(process_raw_frame(frame, &cfg));
+                                        lookahead_frameno += 1;
+                                    }
+                                    Err(DecodeError::EOF) => {
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        error!("Decode error: {}", e);
+                                        return;
+                                    }
+                                };
+                            }
                         }
-                        Err(DecodeError::EOF) => {
-                            break;
+                    } else {
+                        start_frameno = keyframes.iter().copied().last().unwrap();
+                        loop {
+                            // Load frames until the lookahead queue is filled
+                            while analysis_frameno + lookahead_distance > lookahead_frameno {
+                                match read_raw_frame(&mut dec) {
+                                    Ok(frame) => {
+                                        lookahead_queue.insert(
+                                            lookahead_frameno,
+                                            process_raw_frame(frame, &cfg),
+                                        );
+                                        lookahead_frameno += 1;
+                                    }
+                                    Err(DecodeError::EOF) => {
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        error!("Decode error: {}", e);
+                                        return;
+                                    }
+                                };
+                            }
+
+                            // Analyze the current frame for a scenechange
+                            if analysis_frameno != keyframes.iter().last().copied().unwrap() {
+                                // The frame_queue should start at whatever the previous frame was
+                                let frame_set = lookahead_queue
+                                    .iter()
+                                    .skip_while(|(frameno, _)| **frameno < analysis_frameno - 1)
+                                    .take(lookahead_distance + 1)
+                                    .map(|(_, frame)| frame)
+                                    .collect::<Vec<_>>();
+                                if frame_set.len() >= 2 {
+                                    detector.analyze_next_frame(
+                                        &frame_set,
+                                        analysis_frameno,
+                                        &mut keyframes,
+                                    );
+                                } else {
+                                    // End of encode
+                                    keyframes.insert(*lookahead_queue.iter().last().unwrap().0 + 1);
+                                    break;
+                                }
+
+                                analysis_frameno += 1;
+                                if keyframes.iter().last().copied().unwrap() == analysis_frameno - 1
+                                {
+                                    // Keyframe found
+                                    break;
+                                }
+                            } else if analysis_frameno < lookahead_frameno {
+                                analysis_frameno += 1;
+                            } else {
+                                debug!("End of encode");
+                                sender.send(None).unwrap();
+                                input_finished_sender.send(()).unwrap();
+                                match message {
+                                    Slot::Local(slot) => {
+                                        pool_handle.lock().unwrap()[slot] = false;
+                                        progress_senders[slot].send(ProgressStatus::Idle).unwrap();
+                                    }
+                                    Slot::Remote(connection) => {
+                                        connection
+                                            .progress_sender
+                                            .send(ProgressStatus::Idle)
+                                            .unwrap();
+                                        connection
+                                            .worker_update_sender
+                                            .send(WorkerStatusUpdate {
+                                                status: Some(SlotStatus::None),
+                                                slot_delta: Some((
+                                                    connection.slot_in_worker,
+                                                    false,
+                                                )),
+                                            })
+                                            .unwrap();
+                                    }
+                                };
+                                return;
+                            }
                         }
-                        Err(e) => {
-                            return Err(e.into());
+
+                        // The frames comprising the segment are known, so set them in `processed_frames`
+                        let interval: (usize, usize) = keyframes
+                            .iter()
+                            .rev()
+                            .take(2)
+                            .rev()
+                            .copied()
+                            .collect_tuple()
+                            .unwrap();
+                        processed_frames = Vec::with_capacity(interval.1 - interval.0);
+                        for frameno in (interval.0)..(interval.1) {
+                            processed_frames.push(lookahead_queue.remove(&frameno).unwrap());
                         }
+                    }
+                    break;
+                }
+
+                match message {
+                    Slot::Local(slot) => {
+                        debug!("Encoding with local slot");
+                        sender
+                            .send(Some(SegmentData {
+                                segment_no,
+                                slot,
+                                next_analysis_frame: analysis_frameno - 1,
+                                start_frameno,
+                                frames: processed_frames,
+                            }))
+                            .unwrap();
+                    }
+                    Slot::Remote(mut connection) => {
+                        debug!("Encoding with remote slot");
+                        let output = opts.output.clone();
+                        let remote_sender = remote_sender.clone();
+                        scope.spawn(move |_| {
+                            let raw_data = RawFrameData {
+                                connection_id: connection.connection_id.unwrap(),
+                                frames: processed_frames.clone(),
+                            };
+
+                            connection
+                                .progress_sender
+                                .send(ProgressStatus::Compressing(raw_data.frames.len()))
+                                .unwrap();
+                            let compressed_data = CompressedRawFrameData::from(raw_data);
+
+                            connection
+                                .progress_sender
+                                .send(ProgressStatus::Sending(ByteSize(
+                                    compressed_data.len() as u64
+                                )))
+                                .unwrap();
+                            while let Err(e) = connection.socket.write_message(Message::Binary(
+                                rmp_serde::to_vec(&compressed_data).unwrap(),
+                            )) {
+                                error!(
+                                    "Failed to send frames to connection {}: {}",
+                                    connection.connection_id.unwrap(),
+                                    e
+                                );
+                                sleep(Duration::from_secs(1));
+                            }
+                            connection
+                                .worker_update_sender
+                                .send(WorkerStatusUpdate {
+                                    status: Some(SlotStatus::None),
+                                    slot_delta: None,
+                                })
+                                .unwrap();
+                            connection.encode_info = Some(EncodeInfo {
+                                output_file: get_segment_output_filename(&output, segment_no + 1),
+                                frame_count: processed_frames.len(),
+                                next_analysis_frame: analysis_frameno - 1,
+                                segment_idx: segment_no + 1,
+                                start_frameno,
+                            });
+                            remote_sender.send(*connection).unwrap();
+                        });
                     }
                 }
                 segment_no += 1;
+            }
+        })
+        .join()
+        .unwrap();
+
+    // Close any extra ready sockets
+    while let Ok(message) = slot_ready_channel.1.try_recv() {
+        match message {
+            Slot::Local(slot) => {
+                pool.lock().unwrap()[slot] = false;
+            }
+            Slot::Remote(connection) => {
+                connection
+                    .worker_update_sender
+                    .send(WorkerStatusUpdate {
+                        status: Some(SlotStatus::None),
+                        slot_delta: Some((connection.slot_in_worker, false)),
+                    })
+                    .unwrap();
+            }
+        };
+    }
+}
+
+fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
+    pool: Arc<Mutex<Vec<bool>>>,
+    remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
+    slot_ready_sender: SlotReadySender,
+    remote_progress_senders: Vec<ProgressSender>,
+    input_finished_receiver: InputFinishedReceiver,
+    scope: &Scope,
+    video_info: VideoDetails,
+    speed: usize,
+    qp: usize,
+) {
+    loop {
+        if input_finished_receiver.is_full() {
+            debug!("Exiting slot checker loop");
+            return;
+        }
+
+        sleep(Duration::from_millis(500));
+
+        {
+            let mut pool_lock = pool.lock().unwrap();
+            if let Some(slot) = pool_lock.iter().position(|slot| !*slot) {
+                if slot_ready_sender.send(Slot::Local(slot)).is_err() {
+                    debug!("Exiting slot checker loop");
+                    return;
+                };
+                pool_lock[slot] = true;
                 continue;
-            } else {
-                processed_frames = Vec::with_capacity(next_keyframe - lookahead_frameno);
-                while lookahead_frameno < next_keyframe {
-                    match read_raw_frame(&mut dec) {
-                        Ok(frame) => {
-                            processed_frames.push(process_raw_frame(frame, &cfg));
-                            lookahead_frameno += 1;
-                        }
-                        Err(DecodeError::EOF) => {
-                            break;
-                        }
-                        Err(e) => {
-                            return Err(e.into());
-                        }
-                    };
-                }
-            }
-        } else {
-            start_frameno = keyframes.iter().copied().last().unwrap();
-            loop {
-                // Load frames until the lookahead queue is filled
-                while analysis_frameno + sc_opts.lookahead_distance > lookahead_frameno {
-                    match read_raw_frame(&mut dec) {
-                        Ok(frame) => {
-                            lookahead_queue
-                                .insert(lookahead_frameno, process_raw_frame(frame, &cfg));
-                            lookahead_frameno += 1;
-                        }
-                        Err(DecodeError::EOF) => {
-                            break;
-                        }
-                        Err(e) => {
-                            return Err(e.into());
-                        }
-                    };
-                }
-
-                // Analyze the current frame for a scenechange
-                if analysis_frameno != keyframes.iter().last().copied().unwrap() {
-                    // The frame_queue should start at whatever the previous frame was
-                    let frame_set = lookahead_queue
-                        .iter()
-                        .skip_while(|(frameno, _)| **frameno < analysis_frameno - 1)
-                        .take(sc_opts.lookahead_distance + 1)
-                        .map(|(_, frame)| frame)
-                        .collect::<Vec<_>>();
-                    if frame_set.len() >= 2 {
-                        detector.analyze_next_frame(&frame_set, analysis_frameno, &mut keyframes);
-                    } else {
-                        // End of encode
-                        keyframes.insert(*lookahead_queue.iter().last().unwrap().0 + 1);
-                        break;
-                    }
-
-                    analysis_frameno += 1;
-                    if keyframes.iter().last().copied().unwrap() == analysis_frameno - 1 {
-                        // Keyframe found
-                        break;
-                    }
-                } else if analysis_frameno < lookahead_frameno {
-                    analysis_frameno += 1;
-                } else {
-                    // End of encode
-                    sender.send(None)?;
-                    return Ok(());
-                }
-            }
-
-            // The frames comprising the segment are known, so set them in `processed_frames`
-            let interval: (usize, usize) = keyframes
-                .iter()
-                .rev()
-                .take(2)
-                .rev()
-                .copied()
-                .collect_tuple()
-                .unwrap();
-            processed_frames = Vec::with_capacity(interval.1 - interval.0);
-            for frameno in (interval.0)..(interval.1) {
-                processed_frames.push(lookahead_queue.remove(&frameno).unwrap());
             }
         }
 
-        pool.lock().unwrap()[target_slot] = true;
-        sender.send(Some(SegmentData {
-            segment_no,
-            slot_no: target_slot,
-            next_analysis_frame: analysis_frameno - 1,
-            start_frameno,
-            frames: processed_frames,
-        }))?;
-        segment_no += 1;
+        let mut worker_start_idx = 0;
+        for worker in remote_pool.lock().unwrap().iter_mut() {
+            if worker.workers.iter().all(|worker| *worker) {
+                worker_start_idx += worker.workers.len();
+                continue;
+            }
+            if let SlotStatus::None = worker.slot_status {
+                debug!("Empty connection--requesting new slot");
+                let request = Request::builder()
+                    .uri(worker.uri.as_str())
+                    .header("X-RAV1E-AUTH", &worker.password)
+                    .body(())
+                    .unwrap();
+                let mut connection = match connect(request) {
+                    Ok(c) => c.0,
+                    Err(e) => {
+                        error!("Failed to connect to {}: {}", worker.uri, e);
+                        worker_start_idx += worker.workers.len();
+                        continue;
+                    }
+                };
+                if let Err(e) = connection.write_message(Message::Binary(
+                    rmp_serde::to_vec(&SlotRequestMessage {
+                        options: EncodeOptions { speed, qp },
+                        video_info,
+                    })
+                    .unwrap(),
+                )) {
+                    let _ = connection.close(None);
+                    error!("Failed to send slot request to {}: {}", worker.uri, e);
+                    worker_start_idx += worker.workers.len();
+                    continue;
+                };
+                worker.slot_status = SlotStatus::Requested;
+                let slot = worker.workers.iter().position(|worker| !worker).unwrap();
+                let connection = ActiveConnection {
+                    socket: connection,
+                    video_info,
+                    connection_id: None,
+                    encode_info: None,
+                    worker_update_sender: worker.update_channel.0.clone(),
+                    slot_in_worker: slot,
+                    progress_sender: remote_progress_senders[worker_start_idx + slot].clone(),
+                };
+                let slot_ready_sender = slot_ready_sender.clone();
+                scope.spawn(move |_| wait_for_slot_allocation::<T>(connection, slot_ready_sender));
+            }
+            worker_start_idx += worker.workers.len();
+        }
     }
 }

@@ -1,0 +1,21 @@
+# Each worker will begin with the `[[workers]]` key
+[[workers]]
+# `host` is required, for obvious reasons
+host = "192.168.1.101"
+# `port` is optional, and will use the default server port if not specified
+port = 9000
+# `password` is required; it should match the server password
+password = "Friendly-Influence-Warm-Notice-6"
+
+[[workers]]
+# IPv6 also works
+host = "2001:db8::8a2e:370:7334"
+password = "Reasonable-Speak-Bear-Hammer-9"
+
+[[workers]]
+# A domain name will work also
+host = "worker-1.mydomain.com"
+password = "Interfere-Customer-Cut-Landlord-2"
+# Recommended, but requires the server be configured
+# with a valid TLS certificate
+secure = true

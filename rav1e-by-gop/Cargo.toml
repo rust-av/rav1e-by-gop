@@ -12,25 +12,32 @@ autobins = false
 anyhow = "1.0"
 arrayvec = "0.5"
 av-scenechange = { version = "0.4", default-features = false, features = [ "serde" ], optional = true }
+bincode = "1.2"
 clap = { version = "2", optional = true }
 console = { version = "0.11.3", optional = true }
 crossbeam-channel = "0.4"
-crossbeam-utils = "0.7"
+crossbeam-utils = { version = "0.7", optional = true }
 dialoguer = { version = "0.6", optional = true }
 env_logger = { version = "0.7.1", optional = true }
+http = { version = "0.2", optional = true }
 indicatif = { version = "0.14", optional = true }
-itertools = "0.9"
+itertools = { version = "0.9", optional = true }
 ivf = "0.1"
 log = "0.4"
 num_cpus = { version = "1", optional = true }
-rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = [ "asm" ] }
+rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm", "serialize"] }
 rmp-serde = { version = "0.14", optional = true }
 serde = { version = "1", features = ["derive"] }
-systemstat = { version = "0.1", optional = true }
-thiserror = "1"
+systemstat = "0.1"
+thiserror = { version = "1", optional = true }
 threadpool = "1"
-v_frame = "0.1"
+toml = { version = "0.5", optional = true }
+tungstenite = "0.10"
+url = { version = "2.1", optional = true }
+uuid = { version = "0.8", features = ["serde"] }
+v_frame = { version = "0.1", features = ["serialize"] }
 y4m = { version = "0.6", optional = true }
+zstd = "0.5"
 
 [[bin]]
 name = "rav1e-by-gop"
@@ -43,11 +50,16 @@ binary = [
     "av-scenechange",
     "clap",
     "console",
+    "crossbeam-utils",
     "dialoguer",
     "env_logger",
+    "http",
     "indicatif",
+    "itertools",
     "num_cpus",
     "rmp-serde",
-    "systemstat",
+    "thiserror",
+    "toml",
+    "url",
     "y4m"
 ]
