@@ -12,7 +12,7 @@ description = "A tool to parallel encode GOP segments of a video with rav1e"
 anyhow = "1.0"
 av-scenechange = { version = "0.4", default-features = false, features = ["serde"] }
 clap = "2"
-console = "0.10.1"
+console = "0.11.2"
 crossbeam-channel = "0.4"
 crossbeam-utils = "0.7"
 dialoguer = "0.5"
