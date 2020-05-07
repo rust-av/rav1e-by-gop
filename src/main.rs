@@ -129,13 +129,6 @@ fn main() -> Result<()> {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("FAST_ANALYSIS")
-                .help("Specify an alternate file or piped command to use for the analysis pass")
-                .long("fast-fp")
-                .alias("fast-analysis")
-                .takes_value(true),
-        )
-        .arg(
             Arg::with_name("MAX_THREADS")
                 .help("Limit the maximum number of threads that can be used")
                 .long("threads")
