@@ -8,12 +8,14 @@ use crate::encode::{load_progress_file, MemoryUsage};
 use anyhow::{ensure, Result};
 use clap::{App, Arg, ArgMatches};
 use console::{style, Term};
+use log::info;
 use std::collections::BTreeSet;
-use std::fmt;
 use std::fs::File;
+use std::io::Write;
 use std::io::{stdin, Read};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::{env, fmt};
 
 #[derive(Debug, Clone)]
 pub struct CliOptions {
@@ -81,6 +83,13 @@ impl fmt::Display for Input {
 }
 
 fn main() -> Result<()> {
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "rav1e_by_gop=info");
+    }
+    env_logger::builder()
+        .format(|buf, record| writeln!(buf, "{}", record.args()))
+        .init();
+
     // Thanks, borrow checker
     let mem_usage_default = MemoryUsage::default().to_string();
 
@@ -177,21 +186,20 @@ fn main() -> Result<()> {
 
     let progress = load_progress_file(&opts.output, &matches);
     let (keyframes, next_analysis_frame) = if let Some(ref progress) = progress {
-        eprint!("{} encode", style("Resuming").yellow());
+        info!("{} encode", style("Resuming").yellow());
         (progress.keyframes.clone(), progress.next_analysis_frame)
     } else {
-        eprint!("{} encode", style("Starting").yellow());
+        info!("{} encode", style("Starting").yellow());
         (BTreeSet::new(), 0)
     };
-    eprintln!();
 
-    eprintln!(
+    info!(
         "Encoding using input from `{}`, speed {}, quantizer {}, keyint {}-{}",
         opts.input, opts.speed, opts.qp, opts.min_keyint, opts.max_keyint
     );
     perform_encode(keyframes, next_analysis_frame, &opts, progress).expect("Failed encoding");
 
-    eprintln!("{}", style("Finished!").yellow());
+    info!("{}", style("Finished!").yellow());
 
     Ok(())
 }

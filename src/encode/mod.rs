@@ -12,6 +12,7 @@ use clap::ArgMatches;
 use console::{style, Term};
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
 use crossbeam_utils::thread::{scope, Scope};
+use log::{error, info};
 use rav1e::prelude::*;
 use serde::export::Formatter;
 use std::collections::BTreeSet;
@@ -73,7 +74,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
     dec: Decoder<R>,
     video_info: VideoDetails,
 ) -> Result<()> {
-    eprintln!(
+    info!(
         "Using {} decoder: {}p @ {} fps, {}, {}",
         style("y4m").cyan(),
         style(format!("{}x{}", video_info.width, video_info.height)).cyan(),
@@ -88,7 +89,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
 
     let num_threads = decide_thread_count(opts, &video_info);
     let mut thread_pool = ThreadPool::new(num_threads);
-    eprintln!("Using {} encoder threads", style(num_threads).cyan());
+    info!("Using {} encoder threads", style(num_threads).cyan());
 
     let overall_progress = if let Some(progress) = progress {
         progress
@@ -306,7 +307,7 @@ pub fn load_progress_file(outfile: &Path, matches: &ArgMatches) -> Option<Progre
                         break;
                     }
                     _ => {
-                        eprintln!("Input not recognized");
+                        error!("Input not recognized");
                     }
                 };
             }

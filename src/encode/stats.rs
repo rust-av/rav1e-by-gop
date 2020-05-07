@@ -1,4 +1,5 @@
 use console::style;
+use log::info;
 use rav1e::data::EncoderStats;
 use rav1e::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -269,12 +270,12 @@ impl ProgressInfo {
     }
 
     pub fn print_summary(&self, verbose: bool) {
-        eprintln!("{}", self.end_of_encode_progress());
+        info!("{}", self.end_of_encode_progress());
 
-        eprintln!();
+        info!("");
 
-        eprintln!("{}", style("Summary by Frame Type").yellow());
-        eprintln!(
+        info!("{}", style("Summary by Frame Type").yellow());
+        info!(
             "{:10} | {:>6} | {:>9} | {:>6}",
             style("Frame Type").blue(),
             style("Count").blue(),
@@ -286,20 +287,20 @@ impl ProgressInfo {
         self.print_frame_type_summary(FrameType::INTRA_ONLY);
         self.print_frame_type_summary(FrameType::SWITCH);
 
-        eprintln!();
+        info!("");
 
         if verbose {
-            eprintln!("{}", style("Block Type Usage").yellow());
+            info!("{}", style("Block Type Usage").yellow());
             self.print_block_type_summary();
-            eprintln!();
+            info!("");
 
-            eprintln!("{}", style("Transform Type Usage").yellow());
+            info!("{}", style("Transform Type Usage").yellow());
             self.print_transform_type_summary();
-            eprintln!();
+            info!("");
 
-            eprintln!("{}", style("Prediction Mode Usage").yellow());
+            info!("{}", style("Prediction Mode Usage").yellow());
             self.print_prediction_modes_summary();
-            eprintln!();
+            info!("");
         }
     }
 
@@ -307,7 +308,7 @@ impl ProgressInfo {
         let count = self.get_frame_type_count(frame_type);
         let size = self.get_frame_type_avg_size(frame_type);
         let avg_qp = self.get_frame_type_avg_qp(frame_type);
-        eprintln!(
+        info!(
             "{:10} | {:>6} | {:>9} | {:>6.2}",
             style(frame_type.to_string().replace(" frame", "")).blue(),
             style(count).cyan(),
@@ -360,7 +361,7 @@ impl ProgressInfo {
     }
 
     fn print_block_type_summary_for_frame_type(&self, frame_type: FrameType, type_label: char) {
-        eprintln!(
+        info!(
             "{:8} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}",
             style(format!("{} Frames", type_label)).yellow(),
             style("x128").blue(),
@@ -370,7 +371,7 @@ impl ProgressInfo {
             style("x8").blue(),
             style("x4").blue()
         );
-        eprintln!(
+        info!(
             "{:>8} {:>5.1}% {:>5.1}%                              {}",
             style("128x").blue(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_128X128, frame_type)).cyan(),
@@ -385,7 +386,7 @@ impl ProgressInfo {
                 String::new()
             }
         );
-        eprintln!(
+        info!(
             "{:>8} {:>5.1}% {:>5.1}% {:>5.1}% {:>5.1}%",
             style("64x").blue(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_64X128, frame_type)).cyan(),
@@ -393,7 +394,7 @@ impl ProgressInfo {
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_64X32, frame_type)).cyan(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_64X16, frame_type)).cyan(),
         );
-        eprintln!(
+        info!(
             "{:>8}        {:>5.1}% {:>5.1}% {:>5.1}% {:>5.1}%",
             style("32x").blue(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_32X64, frame_type)).cyan(),
@@ -401,7 +402,7 @@ impl ProgressInfo {
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_32X16, frame_type)).cyan(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_32X8, frame_type)).cyan(),
         );
-        eprintln!(
+        info!(
             "{:>8}        {:>5.1}% {:>5.1}% {:>5.1}% {:>5.1}% {:>5.1}%",
             style("16x").blue(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_16X64, frame_type)).cyan(),
@@ -410,7 +411,7 @@ impl ProgressInfo {
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_16X8, frame_type)).cyan(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_16X4, frame_type)).cyan(),
         );
-        eprintln!(
+        info!(
             "{:>8}               {:>5.1}% {:>5.1}% {:>5.1}% {:>5.1}%",
             style("8x").blue(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_8X32, frame_type)).cyan(),
@@ -418,7 +419,7 @@ impl ProgressInfo {
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_8X8, frame_type)).cyan(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_8X4, frame_type)).cyan(),
         );
-        eprintln!(
+        info!(
             "{:>8}                      {:>5.1}% {:>5.1}% {:>5.1}%",
             style("4x").blue(),
             style(self.get_bsize_pct_by_frame_type(BlockSize::BLOCK_4X16, frame_type)).cyan(),
@@ -433,38 +434,38 @@ impl ProgressInfo {
     }
 
     fn print_transform_type_summary_by_frame_type(&self, frame_type: FrameType, type_label: char) {
-        eprintln!("{:8}", style(format!("{} Frames", type_label)).yellow());
-        eprintln!(
+        info!("{:8}", style(format!("{} Frames", type_label)).yellow());
+        info!(
             "{:9} {:>5.1}%",
             style("DCT_DCT").blue(),
             style(self.get_txtype_pct_by_frame_type(TxType::DCT_DCT, frame_type)).cyan()
         );
-        eprintln!(
+        info!(
             "{:9} {:>5.1}%",
             style("ADST_DCT").blue(),
             style(self.get_txtype_pct_by_frame_type(TxType::ADST_DCT, frame_type)).cyan()
         );
-        eprintln!(
+        info!(
             "{:9} {:>5.1}%",
             style("DCT_ADST").blue(),
             style(self.get_txtype_pct_by_frame_type(TxType::DCT_ADST, frame_type)).cyan()
         );
-        eprintln!(
+        info!(
             "{:9} {:>5.1}%",
             style("ADST_ADST").blue(),
             style(self.get_txtype_pct_by_frame_type(TxType::ADST_ADST, frame_type)).cyan()
         );
-        eprintln!(
+        info!(
             "{:9} {:>5.1}%",
             style("IDTX").blue(),
             style(self.get_txtype_pct_by_frame_type(TxType::IDTX, frame_type)).cyan()
         );
-        eprintln!(
+        info!(
             "{:9} {:>5.1}%",
             style("V_DCT").blue(),
             style(self.get_txtype_pct_by_frame_type(TxType::V_DCT, frame_type)).cyan()
         );
-        eprintln!(
+        info!(
             "{:9} {:>5.1}%",
             style("H_DCT").blue(),
             style(self.get_txtype_pct_by_frame_type(TxType::H_DCT, frame_type)).cyan()
@@ -483,12 +484,12 @@ impl ProgressInfo {
         frame_type: FrameType,
         type_label: char,
     ) {
-        eprintln!(
+        info!(
             "{}",
             style(format!("{} Frame Luma Modes", type_label)).yellow()
         );
         if frame_type == FrameType::KEY {
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("DC").blue(),
                 style(
@@ -497,7 +498,7 @@ impl ProgressInfo {
                 .cyan()
             );
 
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Vert").blue(),
                 style(
@@ -505,7 +506,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Horiz").blue(),
                 style(
@@ -513,7 +514,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Paeth").blue(),
                 style(
@@ -524,7 +525,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Smooth").blue(),
                 style(
@@ -535,7 +536,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Smooth V").blue(),
                 style(self.get_luma_pred_mode_pct_by_frame_type(
@@ -544,7 +545,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Smooth H").blue(),
                 style(self.get_luma_pred_mode_pct_by_frame_type(
@@ -553,7 +554,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("45-Deg").blue(),
                 style(
@@ -561,7 +562,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("63-Deg").blue(),
                 style(
@@ -569,7 +570,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("117-Deg").blue(),
                 style(
@@ -580,7 +581,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("135-Deg").blue(),
                 style(
@@ -591,7 +592,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("153-Deg").blue(),
                 style(
@@ -602,7 +603,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("207-Deg").blue(),
                 style(
@@ -614,7 +615,7 @@ impl ProgressInfo {
                 .cyan()
             );
         } else if frame_type == FrameType::INTER {
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Nearest").blue(),
                 style(
@@ -625,7 +626,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Near-0").blue(),
                 style(
@@ -633,7 +634,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Near-1").blue(),
                 style(
@@ -641,7 +642,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Near-Near").blue(),
                 style(
@@ -652,13 +653,13 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("New").blue(),
                 style(self.get_luma_pred_mode_pct_by_frame_type(PredictionMode::NEWMV, frame_type))
                     .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("New-New").blue(),
                 style(
@@ -669,7 +670,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Nearest-Nearest").blue(),
                 style(self.get_luma_pred_mode_pct_by_frame_type(
@@ -678,7 +679,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Global-Global").blue(),
                 style(self.get_luma_pred_mode_pct_by_frame_type(
@@ -690,17 +691,18 @@ impl ProgressInfo {
         }
     }
 
+    #[allow(clippy::cognitive_complexity)]
     fn print_chroma_prediction_mode_summary_by_frame_type(
         &self,
         frame_type: FrameType,
         type_label: char,
     ) {
-        eprintln!(
+        info!(
             "{}",
             style(format!("{} Frame Chroma Modes", type_label)).yellow()
         );
         if frame_type == FrameType::KEY {
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("DC").blue(),
                 style(
@@ -712,7 +714,7 @@ impl ProgressInfo {
                 .cyan()
             );
 
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Vert").blue(),
                 style(
@@ -720,7 +722,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Horiz").blue(),
                 style(
@@ -728,7 +730,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Paeth").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
@@ -737,7 +739,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Smooth").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
@@ -746,7 +748,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Smooth V").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
@@ -755,7 +757,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("Smooth H").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
@@ -764,7 +766,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("45-Deg").blue(),
                 style(
@@ -775,7 +777,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("63-Deg").blue(),
                 style(
@@ -786,7 +788,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("117-Deg").blue(),
                 style(
@@ -797,7 +799,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("135-Deg").blue(),
                 style(
@@ -808,7 +810,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("153-Deg").blue(),
                 style(
@@ -819,7 +821,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("207-Deg").blue(),
                 style(
@@ -830,7 +832,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:8} {:>5.1}%",
                 style("UV CFL").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
@@ -840,7 +842,7 @@ impl ProgressInfo {
                 .cyan()
             );
         } else if frame_type == FrameType::INTER {
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Nearest").blue(),
                 style(
@@ -851,7 +853,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Near-0").blue(),
                 style(
@@ -862,7 +864,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Near-1").blue(),
                 style(
@@ -873,7 +875,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Near-Near").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
@@ -882,7 +884,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("New").blue(),
                 style(
@@ -890,7 +892,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("New-New").blue(),
                 style(
@@ -901,7 +903,7 @@ impl ProgressInfo {
                 )
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Nearest-Nearest").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
@@ -910,7 +912,7 @@ impl ProgressInfo {
                 ))
                 .cyan()
             );
-            eprintln!(
+            info!(
                 "{:15} {:>5.1}%",
                 style("Global-Global").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
