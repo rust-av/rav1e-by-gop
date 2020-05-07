@@ -121,6 +121,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
     let start_frameno = overall_progress.next_analysis_frame;
     let known_keyframes = overall_progress.keyframes.clone();
     let skipped_segments = overall_progress.completed_segments.clone();
+    let display_progress = opts.display_progress;
 
     let receivers = progress_channels
         .iter()
@@ -136,6 +137,7 @@ pub fn perform_encode_inner<T: Pixel, R: 'static + Read + Send>(
             verbose,
             overall_progress,
             input_finished_receiver,
+            display_progress,
         );
     });
 

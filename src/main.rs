@@ -7,7 +7,7 @@ use self::encode::perform_encode;
 use crate::encode::{load_progress_file, MemoryUsage};
 use anyhow::{ensure, Result};
 use clap::{App, Arg, ArgMatches};
-use console::style;
+use console::{style, Term};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fs::File;
@@ -26,6 +26,7 @@ pub struct CliOptions {
     max_threads: Option<usize>,
     verbose: bool,
     memory_usage: MemoryUsage,
+    display_progress: bool,
 }
 
 impl From<&ArgMatches<'_>> for CliOptions {
@@ -50,6 +51,7 @@ impl From<&ArgMatches<'_>> for CliOptions {
                 .value_of("MEMORY_LIMIT")
                 .map(|val| MemoryUsage::from_str(val).expect("Invalid option for memory limit"))
                 .unwrap_or_default(),
+            display_progress: Term::stderr().is_term() && !matches.is_present("NO_PROGRESS"),
         }
     }
 }
@@ -160,6 +162,7 @@ fn main() -> Result<()> {
                 .long("verbose")
                 .short("v"),
         )
+        .arg(Arg::with_name("NO_PROGRESS").help("Hide the progress bars. Mostly useful for debugging. Automatically set if not running from a TTY.").long("no-progress").hidden(true))
         .get_matches();
     let opts = CliOptions::from(&matches);
     ensure!(

@@ -3,7 +3,7 @@ use crate::encode::stats::ProgressInfo;
 use crate::encode::update_progress_file;
 use console::{style, StyledObject};
 use crossbeam_channel::{Receiver, Sender};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,8 +20,12 @@ pub fn watch_progress_receivers(
     verbose: bool,
     mut overall_progress: ProgressInfo,
     input_finished_receiver: InputFinishedReceiver,
+    display_progress: bool,
 ) {
     let segments_pb_holder = MultiProgress::new();
+    if !display_progress {
+        segments_pb_holder.set_draw_target(ProgressDrawTarget::hidden());
+    }
     let main_pb = segments_pb_holder.add(ProgressBar::new_spinner());
     main_pb.set_style(main_progress_style());
     main_pb.set_prefix(&overall_prefix().to_string());
