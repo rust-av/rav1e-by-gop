@@ -1,17 +1,86 @@
 use crate::analyze::InputFinishedReceiver;
-use crate::encode::stats::ProgressInfo;
-use crate::encode::update_progress_file;
+use clap::ArgMatches;
+use console::Term;
 use console::{style, StyledObject};
-use crossbeam_channel::{Receiver, Sender};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
+use log::error;
+use rav1e_by_gop::*;
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{cmp, thread};
 
-pub type ProgressSender = Sender<Option<ProgressInfo>>;
-pub type ProgressReceiver = Receiver<Option<ProgressInfo>>;
-pub type ProgressChannel = (ProgressSender, ProgressReceiver);
+pub fn update_progress_file(output: &Path, progress: &ProgressInfo) {
+    let data = rmp_serde::to_vec(&stats::SerializableProgressInfo::from(progress))
+        .expect("Failed to serialize data");
+    let mut progress_file =
+        File::create(get_progress_filename(&output)).expect("Failed to open progress file");
+    progress_file
+        .write_all(&data)
+        .expect("Failed to write to progress file");
+}
+
+pub fn get_segment_output_filename(output: &Path, segment_idx: usize) -> PathBuf {
+    output.with_extension(&format!("part{}.ivf", segment_idx))
+}
+
+pub fn load_progress_file(outfile: &Path, matches: &ArgMatches) -> Option<ProgressInfo> {
+    let term_err = Term::stderr();
+    if get_progress_filename(outfile).is_file() {
+        let resume = if matches.is_present("FORCE_RESUME") {
+            true
+        } else if matches.is_present("FORCE_OVERWRITE") {
+            false
+        } else if term_err.is_term() && matches.value_of("INPUT") != Some("-") {
+            let resolved;
+            loop {
+                let input = dialoguer::Input::<String>::new()
+                    .with_prompt(&format!(
+                        "Found progress file for this encode. [{}]esume or [{}]verwrite?",
+                        style("R").cyan(),
+                        style("O").cyan()
+                    ))
+                    .interact()
+                    .unwrap();
+                match input.to_lowercase().as_str() {
+                    "r" | "resume" => {
+                        resolved = true;
+                        break;
+                    }
+                    "o" | "overwrite" => {
+                        resolved = false;
+                        break;
+                    }
+                    _ => {
+                        error!("Input not recognized");
+                    }
+                };
+            }
+            resolved
+        } else {
+            // Assume we want to resume if this is not a TTY
+            // and no CLI option is given
+            true
+        };
+        if resume {
+            let progress_file =
+                File::open(get_progress_filename(outfile)).expect("Failed to open progress file");
+            let progress_input: SerializableProgressInfo = rmp_serde::from_read(&progress_file)
+                .expect("Progress file did not contain valid JSON");
+            Some(ProgressInfo::from(&progress_input))
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+pub fn get_progress_filename(output: &Path) -> PathBuf {
+    output.with_extension("progress.data")
+}
 
 pub fn watch_progress_receivers(
     receivers: Vec<ProgressReceiver>,

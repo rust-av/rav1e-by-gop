@@ -1,0 +1,53 @@
+[package]
+name = "rav1e-by-gop"
+version = "0.2.0"
+authors = ["Josh Holmer <jholmer.in@gmail.com>"]
+edition = "2018"
+license = "MIT"
+description = "A tool to parallel encode GOP segments of a video with rav1e"
+autobins = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+anyhow = "1.0"
+av-scenechange = { version = "0.4", default-features = false, features = [ "serde" ], optional = true }
+clap = { version = "2", optional = true }
+console = { version = "0.11.0", optional = true }
+crossbeam-channel = "0.4"
+crossbeam-utils = "0.7"
+dialoguer = { version = "0.6", optional = true }
+env_logger = { version = "0.7.1", optional = true }
+indicatif = { version = "0.14", optional = true }
+itertools = "0.9"
+ivf = "0.1"
+log = "0.4"
+num_cpus = { version = "1", optional = true }
+rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = [ "asm" ] }
+rmp-serde = { version = "0.14", optional = true }
+serde = { version = "1", features = ["derive"] }
+systemstat = { version = "0.1", optional = true }
+thiserror = "1"
+threadpool = "1"
+v_frame = "0.1"
+# Forked to work around lifetimes issues with sending the decoder across threads
+y4m = { version = "0.5", path = "../vendor/y4m/", optional = true }
+
+[[bin]]
+name = "rav1e-by-gop"
+required-features = ["binary"]
+bench = false
+
+[features]
+default = ["binary"]
+binary = [
+    "av-scenechange",
+    "clap",
+    "console",
+    "dialoguer",
+    "env_logger",
+    "indicatif",
+    "num_cpus",
+    "rmp-serde",
+    "systemstat",
+    "y4m"
+]

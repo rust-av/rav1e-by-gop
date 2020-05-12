@@ -4,6 +4,7 @@ use anyhow::Result;
 use av_scenechange::{DetectionOptions, SceneChangeDetector};
 use crossbeam_channel::{Receiver, Sender};
 use itertools::Itertools;
+use rav1e_by_gop::SegmentData;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::sync::{Arc, Mutex};
@@ -13,13 +14,6 @@ use v_frame::frame::Frame;
 use v_frame::pixel::Pixel;
 use y4m::Decoder;
 
-pub(crate) struct SegmentData<T: Pixel> {
-    pub segment_no: usize,
-    pub slot_no: usize,
-    pub next_analysis_frame: usize,
-    pub start_frameno: usize,
-    pub frames: Vec<Frame<T>>,
-}
 pub(crate) type AnalyzerSender<T> = Sender<Option<SegmentData<T>>>;
 pub(crate) type AnalyzerReceiver<T> = Receiver<Option<SegmentData<T>>>;
 pub(crate) type AnalyzerChannel<T> = (AnalyzerSender<T>, AnalyzerReceiver<T>);

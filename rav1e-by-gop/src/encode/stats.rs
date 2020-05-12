@@ -1,3 +1,4 @@
+#[cfg(feature = "binary")]
 use console::style;
 use log::info;
 use rav1e::data::EncoderStats;
@@ -61,32 +62,38 @@ impl ProgressInfo {
         self.frame_info.push(packet.into());
     }
 
-    pub fn frames_encoded(&self) -> usize {
+    #[cfg(feature = "binary")]
+    fn frames_encoded(&self) -> usize {
         self.frame_info.len()
     }
 
-    pub fn encoding_fps(&self) -> f64 {
+    #[cfg(feature = "binary")]
+    fn encoding_fps(&self) -> f64 {
         self.frame_info.len() as f64 / self.elapsed_time()
     }
 
-    pub fn video_fps(&self) -> f64 {
+    #[cfg(feature = "binary")]
+    fn video_fps(&self) -> f64 {
         self.frame_rate.num as f64 / self.frame_rate.den as f64
     }
 
+    #[cfg(feature = "binary")]
     // Returns the bitrate of the frames so far, in bits/second
-    pub fn bitrate(&self) -> usize {
+    fn bitrate(&self) -> usize {
         let bits = self.encoded_size * 8;
         let seconds = self.frame_info.len() as f64 / self.video_fps();
         (bits as f64 / seconds) as usize
     }
 
+    #[cfg(feature = "binary")]
     // Estimates the final filesize in bytes, if the number of frames is known
-    pub fn estimated_size(&self) -> usize {
+    fn estimated_size(&self) -> usize {
         self.encoded_size * self.total_frames / self.frames_encoded()
     }
 
+    #[cfg(feature = "binary")]
     // Estimates the remaining encoding time in seconds, if the number of frames is known
-    pub fn estimated_time(&self) -> u64 {
+    fn estimated_time(&self) -> u64 {
         ((self.total_frames - self.frames_encoded()) as f64 / self.encoding_fps()) as u64
     }
 
@@ -95,6 +102,7 @@ impl ProgressInfo {
         duration.as_secs() as f64 + duration.subsec_millis() as f64 / 1000f64
     }
 
+    #[cfg(feature = "binary")]
     // Number of frames of given type which appear in the video
     fn get_frame_type_count(&self, frame_type: FrameType) -> usize {
         self.frame_info
@@ -103,6 +111,7 @@ impl ProgressInfo {
             .count()
     }
 
+    #[cfg(feature = "binary")]
     fn get_frame_type_avg_size(&self, frame_type: FrameType) -> usize {
         let count = self.get_frame_type_count(frame_type);
         if count == 0 {
@@ -116,6 +125,7 @@ impl ProgressInfo {
             / count
     }
 
+    #[cfg(feature = "binary")]
     fn get_frame_type_avg_qp(&self, frame_type: FrameType) -> f32 {
         let count = self.get_frame_type_count(frame_type);
         if count == 0 {
@@ -129,6 +139,7 @@ impl ProgressInfo {
             / count as f32
     }
 
+    #[cfg(feature = "binary")]
     fn get_block_count_by_frame_type(&self, frame_type: FrameType) -> usize {
         match frame_type {
             FrameType::KEY => self
@@ -147,6 +158,7 @@ impl ProgressInfo {
         }
     }
 
+    #[cfg(feature = "binary")]
     fn get_tx_count_by_frame_type(&self, frame_type: FrameType) -> usize {
         match frame_type {
             FrameType::KEY => self.encoding_stats.0.tx_type_counts.iter().sum::<usize>(),
@@ -155,6 +167,7 @@ impl ProgressInfo {
         }
     }
 
+    #[cfg(feature = "binary")]
     fn get_bsize_pct_by_frame_type(&self, bsize: BlockSize, frame_type: FrameType) -> f32 {
         let count = self.get_block_count_by_frame_type(frame_type);
         if count == 0 {
@@ -169,6 +182,7 @@ impl ProgressInfo {
             * 100.
     }
 
+    #[cfg(feature = "binary")]
     fn get_skip_pct_by_frame_type(&self, frame_type: FrameType) -> f32 {
         let count = self.get_block_count_by_frame_type(frame_type);
         if count == 0 {
@@ -183,6 +197,7 @@ impl ProgressInfo {
             * 100.
     }
 
+    #[cfg(feature = "binary")]
     fn get_txtype_pct_by_frame_type(&self, tx_type: TxType, frame_type: FrameType) -> f32 {
         let count = self.get_tx_count_by_frame_type(frame_type);
         if count == 0 {
@@ -197,6 +212,7 @@ impl ProgressInfo {
             * 100.
     }
 
+    #[cfg(feature = "binary")]
     fn get_luma_pred_count_by_frame_type(&self, frame_type: FrameType) -> usize {
         match frame_type {
             FrameType::KEY => self
@@ -215,6 +231,7 @@ impl ProgressInfo {
         }
     }
 
+    #[cfg(feature = "binary")]
     fn get_chroma_pred_count_by_frame_type(&self, frame_type: FrameType) -> usize {
         match frame_type {
             FrameType::KEY => self
@@ -233,6 +250,7 @@ impl ProgressInfo {
         }
     }
 
+    #[cfg(feature = "binary")]
     fn get_luma_pred_mode_pct_by_frame_type(
         &self,
         pred_mode: PredictionMode,
@@ -251,6 +269,7 @@ impl ProgressInfo {
             * 100.
     }
 
+    #[cfg(feature = "binary")]
     fn get_chroma_pred_mode_pct_by_frame_type(
         &self,
         pred_mode: PredictionMode,
@@ -269,6 +288,7 @@ impl ProgressInfo {
             * 100.
     }
 
+    #[cfg(feature = "binary")]
     pub fn print_summary(&self, verbose: bool) {
         info!("{}", self.end_of_encode_progress());
 
@@ -304,6 +324,7 @@ impl ProgressInfo {
         }
     }
 
+    #[cfg(feature = "binary")]
     fn print_frame_type_summary(&self, frame_type: FrameType) {
         let count = self.get_frame_type_count(frame_type);
         let size = self.get_frame_type_avg_size(frame_type);
@@ -317,6 +338,7 @@ impl ProgressInfo {
         );
     }
 
+    #[cfg(feature = "binary")]
     pub fn progress(&self) -> String {
         format!(
             "{:.2} fps, {:.1} Kb/s, ETA {}",
@@ -326,6 +348,7 @@ impl ProgressInfo {
         )
     }
 
+    #[cfg(feature = "binary")]
     pub fn progress_overall(&self) -> String {
         if self.frames_encoded() == 0 {
             format!(
@@ -344,6 +367,7 @@ impl ProgressInfo {
         }
     }
 
+    #[cfg(feature = "binary")]
     fn end_of_encode_progress(&self) -> String {
         format!(
             "Encoded {} in {}, {:.3} fps, {:.2} Kb/s, size: {:.2} MB",
@@ -355,11 +379,13 @@ impl ProgressInfo {
         )
     }
 
+    #[cfg(feature = "binary")]
     fn print_block_type_summary(&self) {
         self.print_block_type_summary_for_frame_type(FrameType::KEY, 'I');
         self.print_block_type_summary_for_frame_type(FrameType::INTER, 'P');
     }
 
+    #[cfg(feature = "binary")]
     fn print_block_type_summary_for_frame_type(&self, frame_type: FrameType, type_label: char) {
         info!(
             "{:8} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}",
@@ -428,11 +454,13 @@ impl ProgressInfo {
         );
     }
 
+    #[cfg(feature = "binary")]
     fn print_transform_type_summary(&self) {
         self.print_transform_type_summary_by_frame_type(FrameType::KEY, 'I');
         self.print_transform_type_summary_by_frame_type(FrameType::INTER, 'P');
     }
 
+    #[cfg(feature = "binary")]
     fn print_transform_type_summary_by_frame_type(&self, frame_type: FrameType, type_label: char) {
         info!("{:8}", style(format!("{} Frames", type_label)).yellow());
         info!(
@@ -472,6 +500,7 @@ impl ProgressInfo {
         );
     }
 
+    #[cfg(feature = "binary")]
     fn print_prediction_modes_summary(&self) {
         self.print_luma_prediction_mode_summary_by_frame_type(FrameType::KEY, 'I');
         self.print_chroma_prediction_mode_summary_by_frame_type(FrameType::KEY, 'I');
@@ -479,6 +508,7 @@ impl ProgressInfo {
         self.print_chroma_prediction_mode_summary_by_frame_type(FrameType::INTER, 'P');
     }
 
+    #[cfg(feature = "binary")]
     fn print_luma_prediction_mode_summary_by_frame_type(
         &self,
         frame_type: FrameType,
@@ -692,6 +722,7 @@ impl ProgressInfo {
     }
 
     #[allow(clippy::cognitive_complexity)]
+    #[cfg(feature = "binary")]
     fn print_chroma_prediction_mode_summary_by_frame_type(
         &self,
         frame_type: FrameType,
@@ -925,6 +956,7 @@ impl ProgressInfo {
     }
 }
 
+#[cfg(feature = "binary")]
 fn secs_to_human_time(mut secs: u64, always_show_hours: bool) -> String {
     let mut mins = secs / 60;
     secs %= 60;
