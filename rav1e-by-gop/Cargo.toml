@@ -29,8 +29,7 @@ systemstat = { version = "0.1", optional = true }
 thiserror = "1"
 threadpool = "1"
 v_frame = "0.1"
-# Forked to work around lifetimes issues with sending the decoder across threads
-y4m = { version = "0.5", path = "../vendor/y4m/", optional = true }
+y4m = { version = "0.6", optional = true }
 
 [[bin]]
 name = "rav1e-by-gop"
