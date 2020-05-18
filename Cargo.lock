@@ -46,6 +46,9 @@ name = "arrayvec"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "atty"
@@ -557,7 +560,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.3.0"
-source = "git+https://github.com/xiph/rav1e#4e922fed587a5df188f12653f9f9ba2a57b6abbc"
+source = "git+https://github.com/xiph/rav1e#3686d408f6c1a05bdb4c2e0dbfbeeccf3cae345b"
 dependencies = [
  "arbitrary",
  "arg_enum_proc_macro",
@@ -910,7 +913,7 @@ checksum = "826e7639553986605ec5979c7dd957c7895e93eabed50ab2ffa7f6128a75097c"
 [[package]]
 name = "v_frame"
 version = "0.1.0"
-source = "git+https://github.com/xiph/rav1e#4e922fed587a5df188f12653f9f9ba2a57b6abbc"
+source = "git+https://github.com/xiph/rav1e#3686d408f6c1a05bdb4c2e0dbfbeeccf3cae345b"
 dependencies = [
  "cfg-if",
  "noop_proc_macro",
@@ -927,7 +930,7 @@ checksum = "05c78687fb1a80548ae3250346c3db86a80a7cdd77bda190189f2d0a0987c81a"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#4e922fed587a5df188f12653f9f9ba2a57b6abbc"
+source = "git+https://github.com/xiph/rav1e#3686d408f6c1a05bdb4c2e0dbfbeeccf3cae345b"
 dependencies = [
  "bitflags",
  "chrono",
