@@ -55,7 +55,7 @@ pub fn encode_segment<T: Pixel>(
     enc_config.quantizer = opts.qp;
     enc_config.tiles = 1;
     enc_config.min_key_frame_interval = 0;
-    enc_config.max_key_frame_interval = u64::max_value();
+    enc_config.max_key_frame_interval = u16::max_value() as u64;
     enc_config.speed_settings.no_scene_detection = true;
     let cfg = Config::new()
         .with_encoder_config(enc_config)
