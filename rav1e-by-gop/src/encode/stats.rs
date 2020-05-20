@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 #[cfg(feature = "binary")]
 use console::style;
 use log::info;
@@ -674,13 +675,29 @@ impl ProgressInfo {
             );
             info!(
                 "{:15} {:>5.1}%",
-                style("Near-Near").blue(),
-                style(
-                    self.get_luma_pred_mode_pct_by_frame_type(
-                        PredictionMode::NEAR_NEARMV,
-                        frame_type
-                    )
-                )
+                style("Near-Near-0").blue(),
+                style(self.get_luma_pred_mode_pct_by_frame_type(
+                    PredictionMode::NEAR_NEAR0MV,
+                    frame_type
+                ))
+                .cyan()
+            );
+            info!(
+                "{:15} {:>5.1}%",
+                style("Near-Near-1").blue(),
+                style(self.get_luma_pred_mode_pct_by_frame_type(
+                    PredictionMode::NEAR_NEAR1MV,
+                    frame_type
+                ))
+                .cyan()
+            );
+            info!(
+                "{:15} {:>5.1}%",
+                style("Near-Near-2").blue(),
+                style(self.get_luma_pred_mode_pct_by_frame_type(
+                    PredictionMode::NEAR_NEAR2MV,
+                    frame_type
+                ))
                 .cyan()
             );
             info!(
@@ -721,7 +738,6 @@ impl ProgressInfo {
         }
     }
 
-    #[allow(clippy::cognitive_complexity)]
     #[cfg(feature = "binary")]
     fn print_chroma_prediction_mode_summary_by_frame_type(
         &self,
@@ -908,9 +924,27 @@ impl ProgressInfo {
             );
             info!(
                 "{:15} {:>5.1}%",
-                style("Near-Near").blue(),
+                style("Near-Near-0").blue(),
                 style(self.get_chroma_pred_mode_pct_by_frame_type(
-                    PredictionMode::NEAR_NEARMV,
+                    PredictionMode::NEAR_NEAR0MV,
+                    frame_type
+                ))
+                .cyan()
+            );
+            info!(
+                "{:15} {:>5.1}%",
+                style("Near-Near-1").blue(),
+                style(self.get_chroma_pred_mode_pct_by_frame_type(
+                    PredictionMode::NEAR_NEAR1MV,
+                    frame_type
+                ))
+                .cyan()
+            );
+            info!(
+                "{:15} {:>5.1}%",
+                style("Near-Near-2").blue(),
+                style(self.get_chroma_pred_mode_pct_by_frame_type(
+                    PredictionMode::NEAR_NEAR2MV,
                     frame_type
                 ))
                 .cyan()
@@ -1101,7 +1135,7 @@ impl<'de> Deserialize<'de> for FrameSummary {
 }
 
 pub const TX_TYPES: usize = 16;
-pub const PREDICTION_MODES: usize = 28;
+pub const PREDICTION_MODES: usize = 34;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SerializableEncoderStats {
@@ -1112,9 +1146,9 @@ pub struct SerializableEncoderStats {
     /// Stores count of pixels belonging to each transform type in this frame
     pub tx_type_counts: [usize; TX_TYPES],
     /// Stores count of pixels belonging to each luma prediction mode in this frame
-    pub luma_pred_mode_counts: [usize; PREDICTION_MODES],
+    pub luma_pred_mode_counts: ArrayVec<[usize; PREDICTION_MODES]>,
     /// Stores count of pixels belonging to each chroma prediction mode in this frame
-    pub chroma_pred_mode_counts: [usize; PREDICTION_MODES],
+    pub chroma_pred_mode_counts: ArrayVec<[usize; PREDICTION_MODES]>,
 }
 
 impl From<&EncoderStats> for SerializableEncoderStats {
@@ -1123,8 +1157,8 @@ impl From<&EncoderStats> for SerializableEncoderStats {
             block_size_counts: stats.block_size_counts,
             skip_block_count: stats.skip_block_count,
             tx_type_counts: stats.tx_type_counts,
-            luma_pred_mode_counts: stats.luma_pred_mode_counts,
-            chroma_pred_mode_counts: stats.chroma_pred_mode_counts,
+            luma_pred_mode_counts: stats.luma_pred_mode_counts.clone(),
+            chroma_pred_mode_counts: stats.chroma_pred_mode_counts.clone(),
         }
     }
 }
@@ -1135,8 +1169,8 @@ impl From<&SerializableEncoderStats> for EncoderStats {
             block_size_counts: stats.block_size_counts,
             skip_block_count: stats.skip_block_count,
             tx_type_counts: stats.tx_type_counts,
-            luma_pred_mode_counts: stats.luma_pred_mode_counts,
-            chroma_pred_mode_counts: stats.chroma_pred_mode_counts,
+            luma_pred_mode_counts: stats.luma_pred_mode_counts.clone(),
+            chroma_pred_mode_counts: stats.chroma_pred_mode_counts.clone(),
         }
     }
 }

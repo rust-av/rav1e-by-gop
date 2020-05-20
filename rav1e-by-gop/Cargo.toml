@@ -10,6 +10,7 @@ autobins = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 anyhow = "1.0"
+arrayvec = "0.5"
 av-scenechange = { version = "0.4", default-features = false, features = [ "serde" ], optional = true }
 clap = { version = "2", optional = true }
 console = { version = "0.11.0", optional = true }

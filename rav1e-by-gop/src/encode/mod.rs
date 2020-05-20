@@ -45,21 +45,21 @@ pub fn encode_segment<T: Pixel>(
 
     let frames = data.frames.into_iter().map(Arc::new).collect::<Vec<_>>();
 
-    let mut cfg = Config {
-        enc: EncoderConfig::with_speed_preset(opts.speed),
-        threads: 1,
-    };
-    cfg.enc.width = video_info.width;
-    cfg.enc.height = video_info.height;
-    cfg.enc.bit_depth = video_info.bit_depth;
-    cfg.enc.chroma_sampling = video_info.chroma_sampling;
-    cfg.enc.chroma_sample_position = video_info.chroma_sample_position;
-    cfg.enc.time_base = video_info.time_base;
-    cfg.enc.quantizer = opts.qp;
-    cfg.enc.tiles = 1;
-    cfg.enc.min_key_frame_interval = 0;
-    cfg.enc.max_key_frame_interval = u64::max_value();
-    cfg.enc.speed_settings.no_scene_detection = true;
+    let mut enc_config = EncoderConfig::with_speed_preset(opts.speed);
+    enc_config.width = video_info.width;
+    enc_config.height = video_info.height;
+    enc_config.bit_depth = video_info.bit_depth;
+    enc_config.chroma_sampling = video_info.chroma_sampling;
+    enc_config.chroma_sample_position = video_info.chroma_sample_position;
+    enc_config.time_base = video_info.time_base;
+    enc_config.quantizer = opts.qp;
+    enc_config.tiles = 1;
+    enc_config.min_key_frame_interval = 0;
+    enc_config.max_key_frame_interval = u64::max_value();
+    enc_config.speed_settings.no_scene_detection = true;
+    let cfg = Config::new()
+        .with_encoder_config(enc_config)
+        .with_threads(1);
 
     thread_pool.execute(move || {
         let source = Source {

@@ -1,3 +1,5 @@
+#![allow(clippy::cognitive_complexity)]
+
 use rav1e::prelude::*;
 
 pub mod encode;
