@@ -1,6 +1,7 @@
 use arrayvec::ArrayVec;
 #[cfg(feature = "binary")]
 use console::style;
+#[cfg(feature = "binary")]
 use log::info;
 use rav1e::data::EncoderStats;
 use rav1e::prelude::*;

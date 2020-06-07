@@ -1,9 +1,10 @@
 use crate::analyze::InputFinishedReceiver;
+use crate::remote::RemoteWorkerInfo;
 use clap::ArgMatches;
 use console::Term;
 use console::{style, StyledObject};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
-use log::error;
+use log::{debug, error, trace};
 use rav1e_by_gop::*;
 use std::fs::File;
 use std::io::Write;
@@ -34,7 +35,7 @@ pub fn load_progress_file(outfile: &Path, matches: &ArgMatches) -> Option<Progre
         } else if matches.is_present("FORCE_OVERWRITE") {
             false
         } else if term_err.is_term() && matches.value_of("INPUT") != Some("-") {
-            let resolved;
+            let resume;
             loop {
                 let input = dialoguer::Input::<String>::new()
                     .with_prompt(&format!(
@@ -46,11 +47,11 @@ pub fn load_progress_file(outfile: &Path, matches: &ArgMatches) -> Option<Progre
                     .unwrap();
                 match input.to_lowercase().as_str() {
                     "r" | "resume" => {
-                        resolved = true;
+                        resume = true;
                         break;
                     }
                     "o" | "overwrite" => {
-                        resolved = false;
+                        resume = false;
                         break;
                     }
                     _ => {
@@ -58,7 +59,7 @@ pub fn load_progress_file(outfile: &Path, matches: &ArgMatches) -> Option<Progre
                     }
                 };
             }
-            resolved
+            resume
         } else {
             // Assume we want to resume if this is not a TTY
             // and no CLI option is given
@@ -82,15 +83,17 @@ pub fn get_progress_filename(output: &Path) -> PathBuf {
     output.with_extension("progress.data")
 }
 
-pub fn watch_progress_receivers(
+pub(crate) fn watch_progress_receivers(
     receivers: Vec<ProgressReceiver>,
     slots: Arc<Mutex<Vec<bool>>>,
+    remote_slots: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     output_file: PathBuf,
     verbose: bool,
     mut overall_progress: ProgressInfo,
     input_finished_receiver: InputFinishedReceiver,
     display_progress: bool,
 ) {
+    let slots_count = slots.lock().unwrap().len();
     let segments_pb_holder = MultiProgress::new();
     if !display_progress {
         segments_pb_holder.set_draw_target(ProgressDrawTarget::hidden());
@@ -100,10 +103,10 @@ pub fn watch_progress_receivers(
     main_pb.set_prefix(&overall_prefix().to_string());
     main_pb.set_message(&overall_progress.progress_overall());
     let segment_pbs = (0..receivers.len())
-        .map(|_| {
+        .map(|i| {
             let pb = segments_pb_holder.add(ProgressBar::new_spinner());
             pb.set_style(progress_idle_style());
-            pb.set_prefix(&idle_prefix().to_string());
+            pb.set_prefix(&idle_prefix(i >= slots_count).to_string());
             pb.set_position(0);
             pb.set_length(0);
             pb
@@ -117,12 +120,11 @@ pub fn watch_progress_receivers(
     loop {
         for (slot, rx) in receivers.iter().enumerate() {
             while let Ok(msg) = rx.try_recv() {
-                let segment_idx = msg.as_ref().map(|msg| msg.segment_idx).unwrap_or(0);
                 if update_progress(
                     msg,
                     &mut overall_progress,
-                    segment_idx,
                     slots.clone(),
+                    slots_count,
                     slot,
                     &segment_pbs[slot],
                 ) {
@@ -131,15 +133,25 @@ pub fn watch_progress_receivers(
             }
         }
 
-        if !input_finished && input_finished_receiver.try_recv().is_ok() {
+        if !input_finished && input_finished_receiver.is_full() {
+            debug!("Set input finished");
             input_finished = true;
         }
-        if input_finished && slots.lock().unwrap().iter().all(|&slot| !slot) {
+        if input_finished
+            && slots.lock().unwrap().iter().all(|&slot| !slot)
+            && remote_slots
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|slot| slot.workers.iter().all(|worker| !worker))
+        {
+            debug!("Finishing progress");
             // Done encoding
             main_pb.finish();
             for pb in &segment_pbs {
                 pb.finish_and_clear();
             }
+            debug!("Finished progress");
             break;
         }
         thread::sleep(Duration::from_millis(100));
@@ -147,66 +159,93 @@ pub fn watch_progress_receivers(
 
     thread::sleep(Duration::from_millis(500));
     overall_progress.print_summary(verbose);
+    debug!("Printed summary");
 }
 
 fn update_progress(
-    progress: Option<ProgressInfo>,
+    progress: ProgressStatus,
     overall_progress: &mut ProgressInfo,
-    segment_idx: usize,
     slots: Arc<Mutex<Vec<bool>>>,
+    slots_count: usize,
     slot_idx: usize,
     pb: &ProgressBar,
 ) -> bool {
-    if let Some(ref progress) = progress {
-        if progress.frame_info.is_empty() {
-            // New segment starting
-            pb.set_style(progress_active_style());
-            pb.set_prefix(&segment_prefix(segment_idx).to_string());
+    let remote = slot_idx >= slots_count;
+
+    match progress {
+        ProgressStatus::Encoding(progress) => {
+            if progress.frame_info.is_empty() {
+                debug!("Updating progress--new segment starting");
+                pb.set_message("");
+                pb.set_style(progress_active_style());
+                pb.set_prefix(&segment_prefix(progress.segment_idx).to_string());
+                pb.reset_elapsed();
+                pb.set_position(0);
+                pb.set_length(0);
+                pb.set_length(progress.total_frames as u64);
+                overall_progress
+                    .keyframes
+                    .insert(progress.keyframes.iter().next().copied().unwrap());
+                overall_progress.next_analysis_frame = cmp::max(
+                    overall_progress.next_analysis_frame,
+                    progress.next_analysis_frame,
+                );
+                true
+            } else if progress.total_frames == progress.frame_info.len() {
+                debug!("Updating progress--segment complete");
+                overall_progress
+                    .frame_info
+                    .extend_from_slice(&progress.frame_info);
+                overall_progress.total_frames += progress.total_frames;
+                overall_progress.encoded_size += progress.encoded_size;
+                overall_progress
+                    .completed_segments
+                    .insert(progress.segment_idx);
+                overall_progress.encoding_stats.0 += &progress.encoding_stats.0;
+                overall_progress.encoding_stats.1 += &progress.encoding_stats.1;
+                if !remote {
+                    slots.lock().unwrap()[slot_idx] = false;
+                }
+
+                pb.set_message("");
+                pb.set_style(progress_idle_style());
+                pb.set_prefix(&idle_prefix(remote).to_string());
+                pb.reset_elapsed();
+                pb.set_position(0);
+                pb.set_length(0);
+                true
+            } else {
+                trace!("Updating progress--tick");
+                pb.set_position(progress.frame_info.len() as u64);
+                pb.set_message(&progress.progress());
+                false
+            }
+        }
+        ProgressStatus::Loading => {
+            debug!("Updating progress--frames are loading");
+            pb.set_message("Loading frames...");
+            false
+        }
+        ProgressStatus::Compressing(frames) => {
+            debug!("Updating progress--compressing {} frames", frames);
+            pb.set_message(&format!("Compressing {} input frames...", frames));
+            false
+        }
+        ProgressStatus::Sending(size) => {
+            debug!("Updating progress--sending {}", size);
+            pb.set_message(&format!("Sending {} input...", size));
+            false
+        }
+        ProgressStatus::Idle => {
+            debug!("Updating progress--idle");
+            pb.set_message("");
+            pb.set_style(progress_idle_style());
+            pb.set_prefix(&idle_prefix(remote).to_string());
             pb.reset_elapsed();
             pb.set_position(0);
             pb.set_length(0);
-            pb.set_length(progress.total_frames as u64);
-            overall_progress
-                .keyframes
-                .insert(progress.keyframes.iter().next().copied().unwrap());
-            overall_progress.next_analysis_frame = cmp::max(
-                overall_progress.next_analysis_frame,
-                progress.next_analysis_frame,
-            );
-            true
-        } else if progress.total_frames == progress.frame_info.len() {
-            // Segment complete
-            overall_progress
-                .frame_info
-                .extend_from_slice(&progress.frame_info);
-            overall_progress.total_frames += progress.total_frames;
-            overall_progress.encoded_size += progress.encoded_size;
-            overall_progress.completed_segments.insert(segment_idx);
-            overall_progress.encoding_stats.0 += &progress.encoding_stats.0;
-            overall_progress.encoding_stats.1 += &progress.encoding_stats.1;
-            slots.lock().unwrap()[slot_idx] = false;
-
-            pb.set_style(progress_idle_style());
-            pb.set_prefix(&idle_prefix().to_string());
-            pb.set_message("");
-            pb.reset_elapsed();
-            pb.set_length(0);
-            true
-        } else {
-            // Normal tick
-            pb.set_position(progress.frame_info.len() as u64);
-            pb.set_message(&progress.progress());
             false
         }
-    } else {
-        // Skipped segment
-        slots.lock().unwrap()[slot_idx] = false;
-        pb.set_style(progress_idle_style());
-        pb.set_prefix(&idle_prefix().to_string());
-        pb.set_message("");
-        pb.reset_elapsed();
-        pb.set_length(0);
-        false
     }
 }
 
@@ -217,7 +256,7 @@ fn update_overall_progress(output_file: &Path, overall_progress: &ProgressInfo, 
 }
 
 fn progress_idle_style() -> ProgressStyle {
-    ProgressStyle::default_spinner().template("[{prefix}]")
+    ProgressStyle::default_spinner().template("[{prefix}] {msg}")
 }
 
 fn main_progress_style() -> ProgressStyle {
@@ -236,8 +275,12 @@ fn overall_prefix() -> StyledObject<&'static str> {
     style("Overall").blue().bold()
 }
 
-fn idle_prefix() -> StyledObject<&'static str> {
-    style("Idle").cyan().dim()
+fn idle_prefix(remote: bool) -> StyledObject<&'static str> {
+    if remote {
+        style("Remote").yellow().dim()
+    } else {
+        style("Idle").cyan().dim()
+    }
 }
 
 fn segment_prefix(segment_idx: usize) -> StyledObject<String> {

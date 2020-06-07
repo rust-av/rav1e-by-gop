@@ -1,7 +1,11 @@
+#![allow(clippy::cognitive_complexity)]
+#![allow(clippy::too_many_arguments)]
+
 mod analyze;
 mod decode;
 mod encode;
 mod progress;
+mod remote;
 
 use self::encode::*;
 use self::progress::*;
@@ -11,6 +15,7 @@ use console::{style, Term};
 use log::info;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
+use serde::Deserialize;
 use std::cmp;
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -110,7 +115,23 @@ fn main() -> Result<()> {
                 .long("verbose")
                 .short("v"),
         )
-        .arg(Arg::with_name("NO_PROGRESS").help("Hide the progress bars. Mostly useful for debugging. Automatically set if not running from a TTY.").long("no-progress").hidden(true))
+        .arg(Arg::with_name("NO_PROGRESS")
+            .help("Hide the progress bars. Mostly useful for debugging. Automatically set if not running from a TTY.")
+            .long("no-progress")
+            .hidden(true)
+        )
+        .arg(
+            Arg::with_name("WORKERS")
+                .help("A path to the TOML file defining remote encoding workers")
+                .long("workers")
+                .default_value("workers.toml")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("NO_LOCAL")
+                .help("Disable local encoding threads--requires distributed workers")
+                .long("no-local"),
+        )
         .get_matches();
     let opts = CliOptions::from(&matches);
     ensure!(
@@ -155,6 +176,8 @@ pub struct CliOptions {
     verbose: bool,
     memory_usage: MemoryUsage,
     display_progress: bool,
+    workers: Vec<WorkerConfig>,
+    use_local: bool,
 }
 
 impl From<&ArgMatches<'_>> for CliOptions {
@@ -180,6 +203,29 @@ impl From<&ArgMatches<'_>> for CliOptions {
                 .map(|val| MemoryUsage::from_str(val).expect("Invalid option for memory limit"))
                 .unwrap_or_default(),
             display_progress: Term::stderr().is_term() && !matches.is_present("NO_PROGRESS"),
+            workers: {
+                let workers_file_path = matches.value_of("WORKERS").unwrap();
+                match File::open(workers_file_path) {
+                    Ok(mut file) => {
+                        let mut contents = String::new();
+                        file.read_to_string(&mut contents).unwrap();
+                        match toml::from_str::<WorkerFile>(&contents) {
+                            Ok(res) => {
+                                info!("Loaded remote workers file");
+                                res.workers
+                            }
+                            Err(e) => {
+                                panic!("Malformed remote workers file: {}", e);
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        info!("Could not open workers file; using local encoding only");
+                        Vec::new()
+                    }
+                }
+            },
+            use_local: !matches.is_present("NO_LOCAL"),
         }
     }
 }
@@ -258,6 +304,10 @@ impl fmt::Display for MemoryUsage {
 }
 
 fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
+    if !opts.use_local {
+        return 0;
+    }
+
     // Limit to the number of logical CPUs.
     let mut num_threads = num_cpus::get();
     if let Some(max_threads) = opts.max_threads {
@@ -326,4 +376,19 @@ fn bytes_per_frame(video_info: &VideoDetails) -> u64 {
         ChromaSampling::Cs444 => bytes_per_plane * 3,
         ChromaSampling::Cs400 => bytes_per_plane,
     }) as u64
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkerFile {
+    pub workers: Vec<WorkerConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkerConfig {
+    pub host: String,
+    #[serde(default)]
+    pub port: Option<u16>,
+    pub password: String,
+    #[serde(default)]
+    pub secure: bool,
 }
