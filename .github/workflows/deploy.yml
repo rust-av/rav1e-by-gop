@@ -1,0 +1,69 @@
+name: deploy
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+
+  deploy-binaries:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install nasm
+      run: |
+        $NASM_VERSION="2.14.02"
+        $LINK="https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/win64"
+        curl --ssl-no-revoke -LO "$LINK/nasm-$NASM_VERSION-win64.zip"
+        7z e -y "nasm-$NASM_VERSION-win64.zip" -o"C:\nasm"
+
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Set environment variables
+      run: |
+        $VsPath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer"
+        echo "::add-path::$VsPath;C:\nasm"
+
+    - name: Set MSVC x86_64 linker path
+      run: |
+        $LinkGlob = "VC\Tools\MSVC\*\bin\Hostx64\x64"
+        $LinkPath = vswhere -latest -products * -find "$LinkGlob" |
+                    Select-Object -Last 1
+        echo "::add-path::$LinkPath"
+
+    - name: Build
+      run: |
+        cargo build --release
+
+    - name: Strip binaries
+      run: |
+        cd target/release
+        strip rav1e-by-gop.exe rav1e-worker.exe
+
+    - name: Handle release data and files
+      shell: bash
+      id: data
+      run: |
+        VERSION=$(head -n 1 CHANGELOG.md | tr -d "## Version ")
+        echo "::set-output name=version::$VERSION"
+        tail -n +2 CHANGELOG.md | sed -e '/^$/,$d' > CHANGELOG.txt
+
+    - name: Create a release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Version ${{ steps.data.outputs.version }}
+        body_path: CHANGELOG.txt
+        files: |
+          target/release/rav1e-by-gop.exe
+          target/release/rav1e-worker.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
