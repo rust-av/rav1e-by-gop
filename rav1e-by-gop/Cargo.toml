@@ -20,7 +20,7 @@ crossbeam-utils = { version = "0.7", optional = true }
 dialoguer = { version = "0.6", optional = true }
 env_logger = { version = "0.7.1", optional = true }
 http = { version = "0.2", optional = true }
-indicatif = { version = "0.14", optional = true }
+indicatif = { version = "0.15", optional = true }
 itertools = { version = "0.9", optional = true }
 ivf = "0.1"
 log = "0.4"
