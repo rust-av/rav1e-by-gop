@@ -27,7 +27,7 @@ rav1e-by-gop = { path = "../rav1e-by-gop", default-features = false }
 rmp-serde = "0.14"
 serde = { version = "1", features = ["derive"] }
 threadpool = "1"
-tungstenite = "0.10"
+tungstenite = "0.11"
 uuid = { version = "0.8", features = ["v4", "serde"] }
 v_frame = { version = "0.1", features = ["serialize"] }
 zstd = "0.5"
