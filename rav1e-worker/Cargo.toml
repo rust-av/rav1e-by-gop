@@ -9,7 +9,7 @@ description = "A server to enable distributed encoding with rav1e-by-gop"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 anyhow = "1"
-bincode = "1.2"
+bincode = "1.3"
 bcrypt = "0.8"
 chrono = "0.4"
 clap = "2"
