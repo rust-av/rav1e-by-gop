@@ -5,8 +5,7 @@ members = ["rav1e-by-gop", "rav1e-worker"]
 opt-level = 1
 
 [profile.release]
-codegen-units = 1
-lto = true
+lto = "thin"
 
 # Temporary workaround until rav1e 0.3.2 is released with v_frame support
 [patch.crates-io]
