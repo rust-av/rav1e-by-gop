@@ -327,7 +327,9 @@ fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
             // HBD doesn't have a full 100% increase,
             // so be a little more generous with it
             opts.max_keyint * bytes_per_frame * 25 / 10
-        };
+        }
+        // Adjust for the frames being compressed in memory
+        * 6 / 10;
         let total = sys_memory.total.as_u64();
         match opts.memory_usage {
             MemoryUsage::Light => {

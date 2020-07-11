@@ -4,10 +4,11 @@ pub use self::stats::*;
 
 use super::VideoDetails;
 use crate::muxer::create_muxer;
-use crate::{build_encoder_config, SegmentData};
+use crate::{build_encoder_config, decompress_frame, SegmentData};
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -21,10 +22,10 @@ pub struct EncodeOptions {
     pub qp: usize,
 }
 
-pub fn encode_segment<T: Pixel>(
+pub fn encode_segment(
     opts: &EncodeOptions,
     video_info: VideoDetails,
-    data: SegmentData<T>,
+    data: SegmentData,
     thread_pool: &mut ThreadPool,
     progress_sender: ProgressSender,
     segment_output_file: PathBuf,
@@ -34,7 +35,7 @@ pub fn encode_segment<T: Pixel>(
             num: video_info.time_base.den,
             den: video_info.time_base.num,
         },
-        data.frames.len(),
+        data.compressed_frames.len(),
         {
             let mut kf = BTreeSet::new();
             kf.insert(data.start_frameno);
@@ -45,23 +46,27 @@ pub fn encode_segment<T: Pixel>(
     );
     let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
 
-    let frames = data.frames.into_iter().map(Arc::new).collect::<Vec<_>>();
     let cfg = build_encoder_config(opts.speed, opts.qp, video_info);
 
     thread_pool.execute(move || {
         let source = Source {
-            frames,
+            compressed_frames: data.compressed_frames,
             sent_count: 0,
         };
-        do_encode(cfg, source, segment_output_file, progress, progress_sender)
-            .expect("Failed encoding segment");
+        if video_info.bit_depth > 8 {
+            do_encode::<u16>(cfg, source, segment_output_file, progress, progress_sender)
+                .expect("Failed encoding segment");
+        } else {
+            do_encode::<u8>(cfg, source, segment_output_file, progress, progress_sender)
+                .expect("Failed encoding segment");
+        }
     });
     Ok(())
 }
 
-fn do_encode<T: Pixel>(
+fn do_encode<T: Pixel + DeserializeOwned>(
     cfg: Config,
-    mut source: Source<T>,
+    mut source: Source,
     segment_output_file: PathBuf,
     mut progress: ProgressInfo,
     progress_sender: ProgressSender,
@@ -95,19 +100,23 @@ fn do_encode<T: Pixel>(
     Ok(progress)
 }
 
-pub struct Source<T: Pixel> {
+pub struct Source {
     pub sent_count: usize,
-    pub frames: Vec<Arc<Frame<T>>>,
+    pub compressed_frames: Vec<Vec<u8>>,
 }
 
-impl<T: Pixel> Source<T> {
-    pub fn read_frame(&mut self, ctx: &mut Context<T>) {
-        if self.sent_count == self.frames.len() {
+impl Source {
+    pub fn read_frame<T: Pixel + DeserializeOwned>(&mut self, ctx: &mut Context<T>) {
+        if self.sent_count == self.compressed_frames.len() {
             ctx.flush();
             return;
         }
 
-        let _ = ctx.send_frame(Some(self.frames[self.sent_count].clone()));
+        let _ = ctx.send_frame(Some(Arc::new(decompress_frame(
+            &self.compressed_frames[self.sent_count],
+        ))));
+        // Deallocate the compressed frame from memory, we no longer need it
+        self.compressed_frames[self.sent_count] = Vec::new();
         self.sent_count += 1;
     }
 }
@@ -118,9 +127,9 @@ pub enum ProcessFrameResult<T: Pixel> {
     EndOfSegment,
 }
 
-pub fn process_frame<T: Pixel>(
+pub fn process_frame<T: Pixel + DeserializeOwned>(
     ctx: &mut Context<T>,
-    source: &mut Source<T>,
+    source: &mut Source,
 ) -> Result<ProcessFrameResult<T>> {
     let pkt_wrapped = ctx.receive_packet();
     match pkt_wrapped {

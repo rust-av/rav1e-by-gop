@@ -4,9 +4,10 @@ use crossbeam_utils::thread::Scope;
 use log::{debug, error, info, warn};
 use rav1e::prelude::*;
 use rav1e_by_gop::{
-    build_encoder_config, process_frame, CompressedRawFrameData, EncoderMessage,
-    ProcessFrameResult, RawFrameData, SlotRequestMessage, Source,
+    build_encoder_config, process_frame, EncoderMessage, ProcessFrameResult, RawFrameData,
+    SlotRequestMessage, Source,
 };
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::cmp;
 use std::collections::VecDeque;
@@ -85,14 +86,13 @@ pub fn start_workers(
     });
 }
 
-pub fn encode_segment<T: Pixel + Default + Serialize>(
+pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     mut connection: ConnectedSocket,
     encode_request: SlotRequestMessage,
-    input: RawFrameData<T>,
+    input: RawFrameData,
 ) {
     let connection_id = input.connection_id;
-    let frames = input.frames.into_iter().map(Arc::new).collect::<Vec<_>>();
-    if !frames.is_empty() {
+    if !input.compressed_frames.is_empty() {
         let cfg = build_encoder_config(
             encode_request.options.speed,
             encode_request.options.qp,
@@ -114,7 +114,7 @@ pub fn encode_segment<T: Pixel + Default + Serialize>(
             }
         };
         let mut source = Source {
-            frames,
+            compressed_frames: input.compressed_frames,
             sent_count: 0,
         };
         loop {
@@ -177,24 +177,16 @@ fn wait_for_remote_data(mut connection: ConnectedSocket, slot_request: SlotReque
         match connection.socket.read_message() {
             Ok(Message::Binary(data)) => {
                 // This must be an encoder message, start the encode
-                if let Ok(data) = rmp_serde::from_read::<_, CompressedRawFrameData>(data.as_slice())
-                {
+                if let Ok(input) = rmp_serde::from_read::<_, RawFrameData>(data.as_slice()) {
+                    info!(
+                        "Received {} raw frames from {}",
+                        input.compressed_frames.len(),
+                        connection.id
+                    );
                     if slot_request.video_info.bit_depth <= 8 {
-                        let input = RawFrameData::<u8>::from(data);
-                        info!(
-                            "Received {} raw frames from {}",
-                            input.frames.len(),
-                            connection.id
-                        );
-                        encode_segment(connection, slot_request, input);
+                        encode_segment::<u8>(connection, slot_request, input);
                     } else {
-                        let input = RawFrameData::<u16>::from(data);
-                        info!(
-                            "Received {} raw frames from {}",
-                            input.frames.len(),
-                            connection.id
-                        );
-                        encode_segment(connection, slot_request, input);
+                        encode_segment::<u16>(connection, slot_request, input);
                     }
                     return;
                 } else {

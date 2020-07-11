@@ -1,3 +1,4 @@
+use crate::compress_frame;
 use crate::decode::{get_video_details, process_raw_frame, read_raw_frame, DecodeError};
 use crate::progress::get_segment_output_filename;
 use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
@@ -9,9 +10,8 @@ use http::request::Request;
 use itertools::Itertools;
 use log::{debug, error};
 use rav1e_by_gop::{
-    ActiveConnection, CompressedRawFrameData, EncodeInfo, EncodeOptions, ProgressSender,
-    ProgressStatus, RawFrameData, SegmentData, Slot, SlotRequestMessage, SlotStatus, VideoDetails,
-    WorkerStatusUpdate,
+    ActiveConnection, EncodeInfo, EncodeOptions, ProgressSender, ProgressStatus, RawFrameData,
+    SegmentData, Slot, SlotRequestMessage, SlotStatus, VideoDetails, WorkerStatusUpdate,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -26,9 +26,9 @@ use v_frame::frame::Frame;
 use v_frame::pixel::Pixel;
 use y4m::Decoder;
 
-pub(crate) type AnalyzerSender<T> = Sender<Option<SegmentData<T>>>;
-pub(crate) type AnalyzerReceiver<T> = Receiver<Option<SegmentData<T>>>;
-pub(crate) type AnalyzerChannel<T> = (AnalyzerSender<T>, AnalyzerReceiver<T>);
+pub(crate) type AnalyzerSender = Sender<Option<SegmentData>>;
+pub(crate) type AnalyzerReceiver = Receiver<Option<SegmentData>>;
+pub(crate) type AnalyzerChannel = (AnalyzerSender, AnalyzerReceiver);
 
 pub(crate) type RemoteAnalyzerSender = Sender<ActiveConnection>;
 pub(crate) type RemoteAnalyzerReceiver = Receiver<ActiveConnection>;
@@ -48,7 +48,7 @@ pub(crate) fn run_first_pass<
 >(
     mut dec: Decoder<R>,
     opts: CliOptions,
-    sender: AnalyzerSender<T>,
+    sender: AnalyzerSender,
     remote_sender: RemoteAnalyzerSender,
     progress_senders: Vec<ProgressSender>,
     remote_progress_senders: Vec<ProgressSender>,
@@ -107,7 +107,7 @@ pub(crate) fn run_first_pass<
             let mut next_known_keyframe = known_keyframes.iter().nth(1).copied();
             let mut keyframes: BTreeSet<usize> = known_keyframes.clone();
             keyframes.insert(0);
-            let mut lookahead_queue = BTreeMap::new();
+            let mut lookahead_queue: BTreeMap<usize, Frame<T>> = BTreeMap::new();
             while let Ok(message) = slot_ready_listener.recv() {
                 debug!("Received slot ready message");
                 match message {
@@ -117,7 +117,7 @@ pub(crate) fn run_first_pass<
                 .send(ProgressStatus::Loading)
                 .unwrap();
 
-                let mut processed_frames: Vec<Frame<T>>;
+                let mut processed_frames: Vec<Vec<u8>>;
                 loop {
                     if let Some(next_keyframe) = next_known_keyframe {
                         start_frameno = lookahead_frameno;
@@ -150,7 +150,9 @@ pub(crate) fn run_first_pass<
                             while lookahead_frameno < next_keyframe {
                                 match read_raw_frame(&mut dec) {
                                     Ok(frame) => {
-                                        processed_frames.push(process_raw_frame(frame, &cfg));
+                                        processed_frames.push(compress_frame::<T>(
+                                            &process_raw_frame(frame, &cfg),
+                                        ));
                                         lookahead_frameno += 1;
                                     }
                                     Err(DecodeError::EOF) => {
@@ -256,7 +258,8 @@ pub(crate) fn run_first_pass<
                             .unwrap();
                         processed_frames = Vec::with_capacity(interval.1 - interval.0);
                         for frameno in (interval.0)..(interval.1) {
-                            processed_frames.push(lookahead_queue.remove(&frameno).unwrap());
+                            processed_frames
+                                .push(compress_frame(&lookahead_queue.remove(&frameno).unwrap()));
                         }
                     }
                     break;
@@ -271,7 +274,7 @@ pub(crate) fn run_first_pass<
                                 slot,
                                 next_analysis_frame: analysis_frameno - 1,
                                 start_frameno,
-                                frames: processed_frames,
+                                compressed_frames: processed_frames,
                             }))
                             .unwrap();
                     }
@@ -282,23 +285,21 @@ pub(crate) fn run_first_pass<
                         scope.spawn(move |_| {
                             let raw_data = RawFrameData {
                                 connection_id: connection.connection_id.unwrap(),
-                                frames: processed_frames.clone(),
+                                compressed_frames: processed_frames.clone(),
                             };
 
                             connection
                                 .progress_sender
-                                .send(ProgressStatus::Compressing(raw_data.frames.len()))
-                                .unwrap();
-                            let compressed_data = CompressedRawFrameData::from(raw_data);
-
-                            connection
-                                .progress_sender
                                 .send(ProgressStatus::Sending(ByteSize(
-                                    compressed_data.len() as u64
+                                    raw_data
+                                        .compressed_frames
+                                        .iter()
+                                        .map(|frame| frame.len() as u64)
+                                        .sum(),
                                 )))
                                 .unwrap();
                             while let Err(e) = connection.socket.write_message(Message::Binary(
-                                rmp_serde::to_vec(&compressed_data).unwrap(),
+                                rmp_serde::to_vec(&raw_data).unwrap(),
                             )) {
                                 error!(
                                     "Failed to send frames to connection {}: {}",

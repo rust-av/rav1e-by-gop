@@ -148,7 +148,7 @@ pub fn perform_encode_inner<
         progress
     };
 
-    let analyzer_channel: AnalyzerChannel<T> = unbounded();
+    let analyzer_channel: AnalyzerChannel = unbounded();
     let remote_analyzer_channel: RemoteAnalyzerChannel = unbounded();
     let progress_channels: Vec<ProgressChannel> = (0..(num_threads + worker_thread_count))
         .map(|_| unbounded())
@@ -200,7 +200,7 @@ pub fn perform_encode_inner<
         .cloned()
         .collect::<Vec<_>>();
     s.spawn(move |s| {
-        run_first_pass(
+        run_first_pass::<T, R>(
             dec,
             opts_ref,
             analyzer_sender,
@@ -252,7 +252,7 @@ pub fn perform_encode_inner<
 
     let mut num_segments = 0;
     if num_threads > 0 {
-        let _ = listen_for_local_workers(
+        let _ = listen_for_local_workers::<T>(
             EncodeOptions::from(opts),
             &opts.output,
             &mut num_segments,
@@ -335,7 +335,7 @@ fn listen_for_local_workers<T: Pixel>(
     thread_pool: &mut ThreadPool,
     video_info: VideoDetails,
     progress_channels: &[ProgressChannel],
-    analyzer_receiver: AnalyzerReceiver<T>,
+    analyzer_receiver: AnalyzerReceiver,
 ) -> Result<()> {
     loop {
         match analyzer_receiver.try_recv() {

@@ -3,10 +3,12 @@
 use rav1e::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub mod compress;
 pub mod encode;
 pub mod muxer;
 pub mod remote;
 
+pub use self::compress::*;
 pub use self::encode::*;
 pub use self::muxer::*;
 pub use self::remote::*;
@@ -44,12 +46,12 @@ pub enum Slot {
     Remote(Box<ActiveConnection>),
 }
 
-pub struct SegmentData<T: Pixel> {
+pub struct SegmentData {
     pub segment_no: usize,
     pub slot: usize,
     pub next_analysis_frame: usize,
     pub start_frameno: usize,
-    pub frames: Vec<Frame<T>>,
+    pub compressed_frames: Vec<Vec<u8>>,
 }
 
 pub struct ActiveConnection {
