@@ -303,7 +303,11 @@ impl fmt::Display for MemoryUsage {
     }
 }
 
-fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
+fn decide_thread_count(
+    opts: &CliOptions,
+    video_info: &VideoDetails,
+    has_remote_workers: bool,
+) -> usize {
     if !opts.use_local {
         return 0;
     }
@@ -322,14 +326,12 @@ fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
         // Conservatively account for encoding overhead.
         // May readjust in the future.
         let bytes_per_segment = if video_info.bit_depth == 8 {
-            opts.max_keyint * bytes_per_frame * 3
+            opts.max_keyint * bytes_per_frame * 15 / 10
         } else {
             // HBD doesn't have a full 100% increase,
             // so be a little more generous with it
-            opts.max_keyint * bytes_per_frame * 25 / 10
-        }
-        // Adjust for the frames being compressed in memory
-        * 6 / 10;
+            opts.max_keyint * bytes_per_frame * 12 / 10
+        };
         let total = sys_memory.total.as_u64();
         match opts.memory_usage {
             MemoryUsage::Light => {
@@ -343,7 +345,14 @@ fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
                 let limit = cmp::max(ByteSize::gb(2).as_u64(), total.saturating_sub(unreserved));
                 num_threads = cmp::min(
                     num_threads,
-                    cmp::max(1, (limit / bytes_per_segment) as usize),
+                    cmp::max(
+                        1,
+                        // Having remote workers means input must continue
+                        // to be read and analyzed while local encodes
+                        // are happening. i.e. it's like having one extra thread.
+                        (limit / bytes_per_segment) as usize
+                            - if has_remote_workers { 1 } else { 0 },
+                    ),
                 );
             }
             MemoryUsage::Heavy => {
@@ -357,7 +366,11 @@ fn decide_thread_count(opts: &CliOptions, video_info: &VideoDetails) -> usize {
                 let limit = cmp::max(ByteSize::gb(2).as_u64(), total.saturating_sub(unreserved));
                 num_threads = cmp::min(
                     num_threads,
-                    cmp::max(1, (limit / bytes_per_segment) as usize),
+                    cmp::max(
+                        1,
+                        (limit / bytes_per_segment) as usize
+                            - if has_remote_workers { 1 } else { 0 },
+                    ),
                 );
             }
             MemoryUsage::Unlimited => {

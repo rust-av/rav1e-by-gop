@@ -90,11 +90,6 @@ pub fn perform_encode_inner<
         style(format!("{}-bit", video_info.bit_depth)).cyan()
     );
 
-    let num_threads = decide_thread_count(opts, &video_info);
-    if num_threads > 0 {
-        info!("Using {} encoder threads", style(num_threads).cyan());
-    }
-
     let remote_workers = opts
         .workers
         .iter()
@@ -112,6 +107,12 @@ pub fn perform_encode_inner<
         .iter()
         .map(|worker| worker.workers.len())
         .sum::<usize>();
+
+    let num_threads = decide_thread_count(opts, &video_info, !remote_workers.is_empty());
+    if num_threads > 0 {
+        info!("Using {} encoder threads", style(num_threads).cyan());
+    }
+
     if !remote_workers.is_empty() {
         info!(
             "Discovered {} remote workers with up to {} slots",
