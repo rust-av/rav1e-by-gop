@@ -323,14 +323,16 @@ fn decide_thread_count(
     let sys_memory = sys.memory();
     if let Ok(sys_memory) = sys_memory {
         let bytes_per_frame = bytes_per_frame(video_info);
-        // Conservatively account for encoding overhead.
-        // May readjust in the future.
-        let bytes_per_segment = if video_info.bit_depth == 8 {
-            opts.max_keyint * bytes_per_frame * 15 / 10
+        let rdo_lookahead_frames = 40;
+        // The RDO Lookahead will have extra data loaded,
+        // and will be uncompressed in memory.
+        // The remainder of frames will have only basic YUV data loaded,
+        // and will be compressed in memory.
+        let bytes_per_segment = if opts.max_keyint <= rdo_lookahead_frames {
+            bytes_per_frame * opts.max_keyint * 6
         } else {
-            // HBD doesn't have a full 100% increase,
-            // so be a little more generous with it
-            opts.max_keyint * bytes_per_frame * 12 / 10
+            (bytes_per_frame * rdo_lookahead_frames * 6)
+                + bytes_per_frame * (opts.max_keyint - rdo_lookahead_frames) * 6 / 10
         };
         let total = sys_memory.total.as_u64();
         match opts.memory_usage {
