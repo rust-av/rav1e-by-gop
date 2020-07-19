@@ -331,7 +331,7 @@ fn decide_thread_count(
         let bytes_per_segment = if opts.max_keyint <= rdo_lookahead_frames {
             bytes_per_frame * opts.max_keyint * 6
         } else {
-            (bytes_per_frame * rdo_lookahead_frames * 6)
+            (bytes_per_frame * rdo_lookahead_frames * 9)
                 + bytes_per_frame * (opts.max_keyint - rdo_lookahead_frames) * 6 / 10
         };
         let total = sys_memory.total.as_u64();
