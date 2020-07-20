@@ -834,7 +834,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.3.0"
-source = "git+https://github.com/xiph/rav1e#ed4d6781416a0a51db7eb54e555515abdf40e38c"
+source = "git+https://github.com/xiph/rav1e#96a439c1f360b510651eb7aedf39c24458e02003"
 dependencies = [
  "arbitrary",
  "arg_enum_proc_macro",
@@ -1343,7 +1343,7 @@ dependencies = [
 [[package]]
 name = "v_frame"
 version = "0.1.0"
-source = "git+https://github.com/xiph/rav1e#ed4d6781416a0a51db7eb54e555515abdf40e38c"
+source = "git+https://github.com/xiph/rav1e#96a439c1f360b510651eb7aedf39c24458e02003"
 dependencies = [
  "cfg-if",
  "noop_proc_macro",
@@ -1367,7 +1367,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#ed4d6781416a0a51db7eb54e555515abdf40e38c"
+source = "git+https://github.com/xiph/rav1e#96a439c1f360b510651eb7aedf39c24458e02003"
 dependencies = [
  "bitflags",
  "chrono",
