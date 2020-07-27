@@ -20,6 +20,7 @@ use threadpool::ThreadPool;
 pub struct EncodeOptions {
     pub speed: usize,
     pub qp: usize,
+    pub max_bitrate: Option<i32>,
 }
 
 pub fn encode_segment(
@@ -46,7 +47,13 @@ pub fn encode_segment(
     );
     let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
 
-    let cfg = build_encoder_config(opts.speed, opts.qp, video_info);
+    let cfg = build_encoder_config(
+        opts.speed,
+        opts.qp,
+        opts.max_bitrate,
+        video_info,
+        data.compressed_frames.len(),
+    );
 
     thread_pool.execute(move || {
         let source = Source {

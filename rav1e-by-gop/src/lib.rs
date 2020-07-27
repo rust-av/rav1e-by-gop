@@ -1,8 +1,5 @@
 #![allow(clippy::cognitive_complexity)]
 
-use rav1e::prelude::*;
-use serde::{Deserialize, Serialize};
-
 pub mod compress;
 pub mod encode;
 pub mod muxer;
@@ -13,6 +10,9 @@ pub use self::encode::*;
 pub use self::muxer::*;
 pub use self::remote::*;
 use crossbeam_channel::{Receiver, Sender};
+use rav1e::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::cmp;
 use std::path::PathBuf;
 use tungstenite::client::AutoStream;
 use tungstenite::WebSocket;
@@ -89,7 +89,13 @@ pub enum SlotStatus {
     Requested,
 }
 
-pub fn build_encoder_config(speed: usize, qp: usize, video_info: VideoDetails) -> Config {
+pub fn build_encoder_config(
+    speed: usize,
+    qp: usize,
+    max_bitrate: Option<i32>,
+    video_info: VideoDetails,
+    segment_len: usize,
+) -> Config {
     let mut enc_config = EncoderConfig::with_speed_preset(speed);
     enc_config.width = video_info.width;
     enc_config.height = video_info.height;
@@ -97,7 +103,13 @@ pub fn build_encoder_config(speed: usize, qp: usize, video_info: VideoDetails) -
     enc_config.chroma_sampling = video_info.chroma_sampling;
     enc_config.chroma_sample_position = video_info.chroma_sample_position;
     enc_config.time_base = video_info.time_base;
-    enc_config.quantizer = qp;
+    if let Some(bitrate) = max_bitrate {
+        enc_config.min_quantizer = qp as u8;
+        enc_config.bitrate = bitrate;
+        enc_config.reservoir_frame_delay = Some(cmp::max(12, segment_len as i32));
+    } else {
+        enc_config.quantizer = qp;
+    }
     enc_config.tiles = 1;
     enc_config.min_key_frame_interval = 0;
     enc_config.max_key_frame_interval = u16::max_value() as u64;

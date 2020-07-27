@@ -96,7 +96,9 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
         let cfg = build_encoder_config(
             encode_request.options.speed,
             encode_request.options.qp,
+            encode_request.options.max_bitrate,
             encode_request.video_info,
+            input.compressed_frames.len(),
         );
 
         let mut ctx: Context<T> = match cfg.new_context() {

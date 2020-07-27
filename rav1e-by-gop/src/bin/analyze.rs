@@ -78,6 +78,7 @@ pub(crate) fn run_first_pass<
     let pool_handle = pool.clone();
     let speed = opts.speed;
     let qp = opts.qp;
+    let max_bitrate = opts.max_bitrate;
     scope.spawn(move |s| {
         slot_checker_loop::<T>(
             pool_handle,
@@ -89,6 +90,7 @@ pub(crate) fn run_first_pass<
             video_info,
             speed,
             qp,
+            max_bitrate,
         );
     });
 
@@ -361,6 +363,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
     video_info: VideoDetails,
     speed: usize,
     qp: usize,
+    max_bitrate: Option<i32>,
 ) {
     loop {
         if input_finished_receiver.is_full() {
@@ -405,7 +408,11 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
                 };
                 if let Err(e) = connection.write_message(Message::Binary(
                     rmp_serde::to_vec(&SlotRequestMessage {
-                        options: EncodeOptions { speed, qp },
+                        options: EncodeOptions {
+                            speed,
+                            qp,
+                            max_bitrate,
+                        },
                         video_info,
                     })
                     .unwrap(),
