@@ -126,22 +126,25 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
             };
             loop {
                 let result = process_frame(&mut ctx, &mut source).unwrap();
-                match ctx.rc_receive_pass_data() {
-                    RcData::Frame(outbuf) => {
-                        let len = outbuf.len() as u64;
-                        first_pass_data.extend_from_slice(&len.to_be_bytes());
-                        first_pass_data.extend_from_slice(&outbuf);
-                    }
-                    RcData::Summary(outbuf) => {
-                        // The last packet of rate control data we get is the summary data.
-                        // Let's put it at the start of the file.
-                        let mut tmp_data = Vec::new();
-                        let len = outbuf.len() as u64;
-                        tmp_data.extend_from_slice(&len.to_be_bytes());
-                        tmp_data.extend_from_slice(&outbuf);
-                        tmp_data.extend_from_slice(&first_pass_data);
-                        first_pass_data = tmp_data;
-                    }
+                match result {
+                    ProcessFrameResult::NoPacket(false) => {}
+                    _ => match ctx.rc_receive_pass_data() {
+                        RcData::Frame(outbuf) => {
+                            let len = outbuf.len() as u64;
+                            first_pass_data.extend_from_slice(&len.to_be_bytes());
+                            first_pass_data.extend_from_slice(&outbuf);
+                        }
+                        RcData::Summary(outbuf) => {
+                            // The last packet of rate control data we get is the summary data.
+                            // Let's put it at the start of the file.
+                            let mut tmp_data = Vec::new();
+                            let len = outbuf.len() as u64;
+                            tmp_data.extend_from_slice(&len.to_be_bytes());
+                            tmp_data.extend_from_slice(&outbuf);
+                            tmp_data.extend_from_slice(&first_pass_data);
+                            first_pass_data = tmp_data;
+                        }
+                    },
                 }
                 if let ProcessFrameResult::EndOfSegment = result {
                     break;
@@ -210,7 +213,7 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
                         return;
                     };
                 }
-                Ok(ProcessFrameResult::NoPacket) => {
+                Ok(ProcessFrameResult::NoPacket(_)) => {
                     // Next iteration
                 }
                 Ok(ProcessFrameResult::EndOfSegment) => {
