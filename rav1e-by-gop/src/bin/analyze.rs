@@ -9,10 +9,7 @@ use crossbeam_utils::thread::Scope;
 use http::request::Request;
 use itertools::Itertools;
 use log::{debug, error};
-use rav1e_by_gop::{
-    ActiveConnection, EncodeInfo, EncodeOptions, ProgressSender, ProgressStatus, RawFrameData,
-    SegmentData, Slot, SlotRequestMessage, SlotStatus, VideoDetails, WorkerStatusUpdate,
-};
+use rav1e_by_gop::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -258,7 +255,8 @@ pub(crate) fn run_first_pass<
                             .copied()
                             .collect_tuple()
                             .unwrap();
-                        processed_frames = Vec::with_capacity(interval.1 - interval.0);
+                        let interval_len = interval.1 - interval.0;
+                        processed_frames = Vec::with_capacity(interval_len);
                         for frameno in (interval.0)..(interval.1) {
                             processed_frames
                                 .push(compress_frame(&lookahead_queue.remove(&frameno).unwrap()));

@@ -3,14 +3,12 @@ use crate::ConnectedSocket;
 use crossbeam_utils::thread::Scope;
 use log::{debug, error, info, warn};
 use rav1e::prelude::*;
-use rav1e_by_gop::{
-    build_encoder_config, process_frame, EncoderMessage, ProcessFrameResult, RawFrameData,
-    SlotRequestMessage, Source,
-};
+use rav1e_by_gop::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::cmp;
 use std::collections::VecDeque;
+use std::io::{Cursor, Read};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
@@ -93,12 +91,76 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
 ) {
     let connection_id = input.connection_id;
     if !input.compressed_frames.is_empty() {
+        let mut source = Source {
+            compressed_frames: input.compressed_frames.into_iter().map(Arc::new).collect(),
+            sent_count: 0,
+        };
+
+        let opts = &encode_request.options;
+        let do_two_pass = opts.max_bitrate.is_some();
+
+        let mut first_pass_data = Vec::new();
+        if do_two_pass {
+            let cfg = build_first_pass_encoder_config(
+                opts.speed,
+                opts.qp,
+                opts.max_bitrate,
+                encode_request.video_info,
+                source.frame_count(),
+            );
+            let mut source = source.clone();
+            let mut ctx: Context<T> = match cfg.new_context() {
+                Ok(ctx) => ctx,
+                Err(e) => {
+                    error!(
+                        "Failed to create encode context for connection {}: {}",
+                        connection_id, e
+                    );
+                    let _ = connection.socket.write_message(Message::Binary(
+                        rmp_serde::to_vec(&EncoderMessage::<T>::EncodeFailed(e.to_string()))
+                            .unwrap(),
+                    ));
+                    let _ = connection.socket.close(None);
+                    return;
+                }
+            };
+            loop {
+                let result = process_frame(&mut ctx, &mut source).unwrap();
+                match ctx.rc_receive_pass_data() {
+                    RcData::Frame(outbuf) => {
+                        let len = outbuf.len() as u64;
+                        first_pass_data.extend_from_slice(&len.to_be_bytes());
+                        first_pass_data.extend_from_slice(&outbuf);
+                    }
+                    RcData::Summary(outbuf) => {
+                        // The last packet of rate control data we get is the summary data.
+                        // Let's put it at the start of the file.
+                        let mut tmp_data = Vec::new();
+                        let len = outbuf.len() as u64;
+                        tmp_data.extend_from_slice(&len.to_be_bytes());
+                        tmp_data.extend_from_slice(&outbuf);
+                        tmp_data.extend_from_slice(&first_pass_data);
+                        first_pass_data = tmp_data;
+                    }
+                }
+                if let ProcessFrameResult::EndOfSegment = result {
+                    break;
+                }
+            }
+        }
+
+        let mut pass_data = Cursor::new(first_pass_data);
         let cfg = build_encoder_config(
             encode_request.options.speed,
             encode_request.options.qp,
             encode_request.options.max_bitrate,
             encode_request.video_info,
-            input.compressed_frames.len(),
+            source.frame_count(),
+            if do_two_pass {
+                Some(&mut pass_data)
+            } else {
+                None
+            },
         );
 
         let mut ctx: Context<T> = match cfg.new_context() {
@@ -115,11 +177,18 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
                 return;
             }
         };
-        let mut source = Source {
-            compressed_frames: input.compressed_frames,
-            sent_count: 0,
-        };
         loop {
+            if do_two_pass {
+                while ctx.rc_second_pass_data_required() > 0 {
+                    let mut buflen = [0u8; 8];
+                    pass_data.read_exact(&mut buflen).unwrap();
+
+                    let mut data = vec![0u8; u64::from_be_bytes(buflen) as usize];
+                    pass_data.read_exact(&mut data).unwrap();
+
+                    ctx.rc_send_pass_data(&data).unwrap();
+                }
+            }
             match process_frame(&mut ctx, &mut source) {
                 Ok(ProcessFrameResult::Packet(packet)) => {
                     debug!(

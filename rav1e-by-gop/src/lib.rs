@@ -13,6 +13,7 @@ use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp;
+use std::io::{Cursor, Read};
 use std::path::PathBuf;
 use tungstenite::client::AutoStream;
 use tungstenite::WebSocket;
@@ -95,7 +96,55 @@ pub fn build_encoder_config(
     max_bitrate: Option<i32>,
     video_info: VideoDetails,
     segment_len: usize,
+    first_pass_data: Option<&mut Cursor<Vec<u8>>>,
 ) -> Config {
+    let cfg = Config::new()
+        .with_threads(1)
+        .with_encoder_config(build_base_encoder_config(
+            speed,
+            qp,
+            max_bitrate,
+            video_info,
+            segment_len,
+        ));
+    if let Some(fp_data) = first_pass_data {
+        let mut buflen = [0u8; 8];
+        fp_data.read_exact(&mut buflen).unwrap();
+
+        let len = i64::from_be_bytes(buflen);
+        let mut buf = vec![0u8; len as usize];
+        fp_data.read_exact(&mut buf).unwrap();
+
+        cfg.with_rate_control(RateControlConfig::from_summary_slice(&buf).unwrap())
+    } else {
+        cfg
+    }
+}
+
+pub fn build_first_pass_encoder_config(
+    speed: usize,
+    qp: usize,
+    max_bitrate: Option<i32>,
+    video_info: VideoDetails,
+    segment_len: usize,
+) -> Config {
+    let mut enc_config =
+        build_base_encoder_config(cmp::max(speed, 9), qp, max_bitrate, video_info, segment_len);
+    enc_config.speed_settings.cdef = false;
+    enc_config.speed_settings.lrf = false;
+    Config::new()
+        .with_threads(1)
+        .with_encoder_config(enc_config)
+        .with_rate_control(RateControlConfig::new().with_emit_data(true))
+}
+
+pub fn build_base_encoder_config(
+    speed: usize,
+    qp: usize,
+    max_bitrate: Option<i32>,
+    video_info: VideoDetails,
+    segment_len: usize,
+) -> EncoderConfig {
     let mut enc_config = EncoderConfig::with_speed_preset(speed);
     enc_config.width = video_info.width;
     enc_config.height = video_info.height;
@@ -114,7 +163,5 @@ pub fn build_encoder_config(
     enc_config.min_key_frame_interval = 0;
     enc_config.max_key_frame_interval = u16::max_value() as u64;
     enc_config.speed_settings.no_scene_detection = true;
-    Config::new()
-        .with_encoder_config(enc_config)
-        .with_threads(1)
+    enc_config
 }

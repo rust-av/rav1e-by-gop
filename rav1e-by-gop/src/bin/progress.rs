@@ -221,6 +221,30 @@ fn update_progress(
                 false
             }
         }
+        ProgressStatus::FirstPass(progress) => {
+            if progress.frames_done == 0 {
+                debug!("Updating first pass progress--new segment starting");
+                pb.set_message(&style("Analyzing").cyan().to_string());
+                pb.set_style(progress_active_style());
+                pb.set_prefix(&segment_prefix(progress.segment_idx).to_string());
+                pb.reset_elapsed();
+                pb.set_position(0);
+                pb.set_length(0);
+                pb.set_length(progress.frames_total as u64);
+                false
+            } else if progress.frames_done == progress.frames_total {
+                pb.set_style(progress_idle_style());
+                pb.set_prefix(&idle_prefix(remote).to_string());
+                pb.reset_elapsed();
+                pb.set_position(0);
+                pb.set_length(0);
+                false
+            } else {
+                trace!("Updating first pass progress--tick");
+                pb.set_position(progress.frames_done as u64);
+                false
+            }
+        }
         ProgressStatus::Loading => {
             debug!("Updating progress--frames are loading");
             pb.set_message("Loading frames...");

@@ -345,7 +345,7 @@ fn listen_for_local_workers<T: Pixel>(
                 let segment_idx = data.segment_no + 1;
                 *num_segments = cmp::max(*num_segments, segment_idx);
                 encode_segment(
-                    &encode_opts,
+                    encode_opts,
                     video_info,
                     data,
                     thread_pool,
