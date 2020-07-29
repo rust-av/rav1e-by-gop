@@ -130,12 +130,12 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
                 match result {
                     ProcessFrameResult::NoPacket(false) => {}
                     _ => match ctx.rc_receive_pass_data() {
-                        RcData::Frame(outbuf) => {
+                        Some(RcData::Frame(outbuf)) => {
                             let len = outbuf.len() as u64;
                             first_pass_data.extend_from_slice(&len.to_be_bytes());
                             first_pass_data.extend_from_slice(&outbuf);
                         }
-                        RcData::Summary(outbuf) => {
+                        Some(RcData::Summary(outbuf)) => {
                             // The last packet of rate control data we get is the summary data.
                             // Let's put it at the start of the file.
                             let mut tmp_data = Vec::new();
@@ -145,6 +145,7 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
                             tmp_data.extend_from_slice(&first_pass_data);
                             first_pass_data = tmp_data;
                         }
+                        None => {}
                     },
                 }
                 if let ProcessFrameResult::EndOfSegment = result {

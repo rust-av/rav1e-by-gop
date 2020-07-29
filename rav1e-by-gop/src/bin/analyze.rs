@@ -9,6 +9,7 @@ use crossbeam_utils::thread::Scope;
 use http::request::Request;
 use itertools::Itertools;
 use log::{debug, error};
+use rav1e::prelude::*;
 use rav1e_by_gop::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -107,6 +108,16 @@ pub(crate) fn run_first_pass<
             let mut keyframes: BTreeSet<usize> = known_keyframes.clone();
             keyframes.insert(0);
             let mut lookahead_queue: BTreeMap<usize, Frame<T>> = BTreeMap::new();
+
+            let enc_cfg = build_first_pass_encoder_config(
+                opts.speed,
+                opts.qp,
+                opts.max_bitrate,
+                video_info,
+                12,
+            );
+            let ctx: Context<T> = enc_cfg.new_context().unwrap();
+
             while let Ok(message) = slot_ready_listener.recv() {
                 debug!("Received slot ready message");
                 match message {
@@ -150,7 +161,7 @@ pub(crate) fn run_first_pass<
                                 match read_raw_frame(&mut dec) {
                                     Ok(frame) => {
                                         processed_frames.push(compress_frame::<T>(
-                                            &process_raw_frame(frame, &cfg),
+                                            &process_raw_frame(frame, &ctx, &cfg),
                                         ));
                                         lookahead_frameno += 1;
                                     }
@@ -173,7 +184,7 @@ pub(crate) fn run_first_pass<
                                     Ok(frame) => {
                                         lookahead_queue.insert(
                                             lookahead_frameno,
-                                            process_raw_frame(frame, &cfg),
+                                            process_raw_frame(frame, &ctx, &cfg),
                                         );
                                         lookahead_frameno += 1;
                                     }

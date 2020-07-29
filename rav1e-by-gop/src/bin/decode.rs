@@ -55,8 +55,12 @@ pub(crate) fn read_raw_frame<'d, R: Read>(
     dec.read_frame().map_err(Into::into)
 }
 
-pub(crate) fn process_raw_frame<T: Pixel>(frame: y4m::Frame, cfg: &VideoDetails) -> Frame<T> {
-    let mut f: Frame<T> = Frame::new(cfg.width, cfg.height, cfg.chroma_sampling);
+pub(crate) fn process_raw_frame<T: Pixel>(
+    frame: y4m::Frame,
+    ctx: &Context<T>,
+    cfg: &VideoDetails,
+) -> Frame<T> {
+    let mut f: Frame<T> = ctx.new_frame();
     let bytes = if cfg.bit_depth <= 8 { 1 } else { 2 };
 
     let (chroma_width, _) = cfg
