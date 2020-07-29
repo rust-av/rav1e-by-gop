@@ -9,6 +9,7 @@ use serde::Serialize;
 use std::cmp;
 use std::collections::VecDeque;
 use std::io::{Cursor, Read};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
@@ -92,7 +93,7 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     let connection_id = input.connection_id;
     if !input.compressed_frames.is_empty() {
         let mut source = Source {
-            compressed_frames: input.compressed_frames.into_iter().map(Arc::new).collect(),
+            compressed_frames: input.compressed_frames.into_iter().map(Rc::new).collect(),
             sent_count: 0,
         };
 

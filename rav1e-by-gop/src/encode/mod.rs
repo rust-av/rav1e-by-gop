@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use systemstat::data::ByteSize;
 use threadpool::ThreadPool;
@@ -50,7 +51,7 @@ pub fn encode_segment(
 
     thread_pool.execute(move || {
         let source = Source {
-            compressed_frames: data.compressed_frames.into_iter().map(Arc::new).collect(),
+            compressed_frames: data.compressed_frames.into_iter().map(Rc::new).collect(),
             sent_count: 0,
         };
         if video_info.bit_depth > 8 {
@@ -204,7 +205,7 @@ fn do_encode<T: Pixel + DeserializeOwned>(
 #[derive(Clone)]
 pub struct Source {
     pub sent_count: usize,
-    pub compressed_frames: Vec<Arc<Vec<u8>>>,
+    pub compressed_frames: Vec<Rc<Vec<u8>>>,
 }
 
 impl Source {
@@ -218,7 +219,7 @@ impl Source {
             &self.compressed_frames[self.sent_count],
         ))));
         // Deallocate the compressed frame from memory, we no longer need it
-        self.compressed_frames[self.sent_count] = Arc::new(Vec::new());
+        self.compressed_frames[self.sent_count] = Rc::new(Vec::new());
         self.sent_count += 1;
     }
 
