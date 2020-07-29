@@ -109,14 +109,9 @@ pub(crate) fn run_first_pass<
             keyframes.insert(0);
             let mut lookahead_queue: BTreeMap<usize, Frame<T>> = BTreeMap::new();
 
-            let enc_cfg = build_first_pass_encoder_config(
-                opts.speed,
-                opts.qp,
-                opts.max_bitrate,
-                video_info,
-                12,
-            );
-            let ctx: Context<T> = enc_cfg.new_context().unwrap();
+            let enc_cfg =
+                build_encoder_config(opts.speed, opts.qp, opts.max_bitrate, video_info, 12, None);
+            let ctx: Context<T> = enc_cfg.new_context::<T>().unwrap();
 
             while let Ok(message) = slot_ready_listener.recv() {
                 debug!("Received slot ready message");
