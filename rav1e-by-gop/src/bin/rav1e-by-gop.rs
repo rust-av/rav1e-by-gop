@@ -104,6 +104,12 @@ fn main() -> Result<()> {
                 .default_value(&mem_usage_default),
         )
         .arg(
+            Arg::with_name("FRAMES")
+                .help("Limit the number of frames to encode")
+                .long("frames")
+                .takes_value(true),
+        )
+        .arg(
             Arg::with_name("FORCE_RESUME")
                 .help("Resume any in-progress encodes without being prompted")
                 .long("resume")
@@ -180,6 +186,7 @@ pub struct CliOptions {
     min_keyint: u64,
     max_keyint: u64,
     max_threads: Option<usize>,
+    max_frames: Option<u64>,
     verbose: bool,
     memory_usage: MemoryUsage,
     display_progress: bool,
@@ -207,6 +214,9 @@ impl From<&ArgMatches<'_>> for CliOptions {
             max_threads: matches
                 .value_of("MAX_THREADS")
                 .map(|threads| threads.parse().unwrap()),
+            max_frames: matches
+                .value_of("FRAMES")
+                .map(|frames| frames.parse().unwrap()),
             verbose: matches.is_present("VERBOSE"),
             memory_usage: matches
                 .value_of("MEMORY_LIMIT")

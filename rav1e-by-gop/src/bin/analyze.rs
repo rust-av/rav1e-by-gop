@@ -95,6 +95,10 @@ pub(crate) fn run_first_pass<
     let pool_handle = pool.clone();
     let slot_ready_listener = slot_ready_channel.1.clone();
     let lookahead_distance = sc_opts.lookahead_distance;
+    let frame_limit = opts
+        .max_frames
+        .map(|f| f as usize)
+        .unwrap_or(usize::max_value());
     scope
         .spawn(move |scope| {
             let mut detector =
@@ -174,7 +178,9 @@ pub(crate) fn run_first_pass<
                         start_frameno = keyframes.iter().copied().last().unwrap();
                         loop {
                             // Load frames until the lookahead queue is filled
-                            while analysis_frameno + lookahead_distance > lookahead_frameno {
+                            while analysis_frameno + lookahead_distance > lookahead_frameno
+                                && lookahead_frameno < frame_limit
+                            {
                                 match read_raw_frame(&mut dec) {
                                     Ok(frame) => {
                                         lookahead_queue.insert(

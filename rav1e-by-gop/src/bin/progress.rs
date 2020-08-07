@@ -92,6 +92,7 @@ pub(crate) fn watch_progress_receivers(
     mut overall_progress: ProgressInfo,
     input_finished_receiver: InputFinishedReceiver,
     display_progress: bool,
+    max_frames: Option<u64>,
 ) {
     let slots_count = slots.lock().unwrap().len();
     let segments_pb_holder = MultiProgress::new();
@@ -102,6 +103,9 @@ pub(crate) fn watch_progress_receivers(
     main_pb.set_style(main_progress_style());
     main_pb.set_prefix(&overall_prefix().to_string());
     main_pb.set_message(&overall_progress.progress_overall());
+    if let Some(max_frames) = max_frames {
+        main_pb.set_length(max_frames);
+    }
     let segment_pbs = (0..receivers.len())
         .map(|i| {
             let pb = segments_pb_holder.add(ProgressBar::new_spinner());

@@ -140,6 +140,7 @@ pub fn perform_encode_inner<
             keyframes,
             0,
             next_analysis_frame,
+            opts.max_frames,
         );
 
         // Do an initial write of the progress file,
@@ -172,6 +173,7 @@ pub fn perform_encode_inner<
     let slots_ref = slots.clone();
     let remote_slots_ref = remote_slots.clone();
     let input_finished_receiver = input_finished_channel.1.clone();
+    let max_frames = opts.max_frames;
     s.spawn(move |_| {
         watch_progress_receivers(
             receivers,
@@ -182,6 +184,7 @@ pub fn perform_encode_inner<
             overall_progress,
             input_finished_receiver,
             display_progress,
+            max_frames,
         );
     });
 

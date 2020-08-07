@@ -46,6 +46,7 @@ pub fn encode_segment(
         },
         data.segment_no + 1,
         data.next_analysis_frame,
+        None,
     );
     let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
 

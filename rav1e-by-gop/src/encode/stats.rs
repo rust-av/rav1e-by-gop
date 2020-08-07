@@ -31,6 +31,7 @@ pub struct ProgressInfo {
     pub completed_segments: BTreeSet<usize>,
     pub segment_idx: usize,
     pub next_analysis_frame: usize,
+    pub frame_limit: Option<u64>,
 }
 
 impl ProgressInfo {
@@ -40,6 +41,7 @@ impl ProgressInfo {
         keyframes: BTreeSet<usize>,
         segment_idx: usize,
         next_analysis_frame: usize,
+        frame_limit: Option<u64>,
     ) -> Self {
         Self {
             frame_rate,
@@ -52,6 +54,7 @@ impl ProgressInfo {
             segment_idx,
             encoding_stats: (EncoderStats::default(), EncoderStats::default()),
             next_analysis_frame,
+            frame_limit,
         }
     }
 
@@ -94,9 +97,9 @@ impl ProgressInfo {
     }
 
     #[cfg(feature = "binary")]
-    // Estimates the remaining encoding time in seconds, if the number of frames is known
-    fn estimated_time(&self) -> u64 {
-        ((self.total_frames - self.frames_encoded()) as f64 / self.encoding_fps()) as u64
+    // Estimates the remaining encoding time in seconds
+    fn estimated_time(&self, total_frames: usize) -> u64 {
+        ((total_frames - self.frames_encoded()) as f64 / self.encoding_fps()) as u64
     }
 
     pub fn elapsed_time(&self) -> f64 {
@@ -346,17 +349,38 @@ impl ProgressInfo {
             "{:.2} fps, {:.1} Kb/s, ETA {}",
             self.encoding_fps(),
             self.bitrate() as f64 / 1000f64,
-            secs_to_human_time(self.estimated_time(), false)
+            secs_to_human_time(self.estimated_time(self.total_frames), false)
         )
     }
 
     #[cfg(feature = "binary")]
     pub fn progress_overall(&self) -> String {
         if self.frames_encoded() == 0 {
+            if let Some(max_frames) = self.frame_limit {
+                format!(
+                    "Input Frame {}/{}, Output Frame {}/{}",
+                    self.next_analysis_frame + 1,
+                    max_frames,
+                    self.frames_encoded(),
+                    max_frames,
+                )
+            } else {
+                format!(
+                    "Input Frame {}, Output Frame {}",
+                    self.next_analysis_frame + 1,
+                    self.frames_encoded(),
+                )
+            }
+        } else if let Some(max_frames) = self.frame_limit {
             format!(
-                "Input Frame {}, Output Frame {}",
+                "Input Frame {}/{}, Output Frame {}/{}, {:.2} fps, {:.1} Kb/s, ETA {}",
                 self.next_analysis_frame + 1,
+                max_frames,
                 self.frames_encoded(),
+                max_frames,
+                self.encoding_fps(),
+                self.bitrate() as f64 / 1000f64,
+                secs_to_human_time(self.estimated_time(max_frames as usize), false)
             )
         } else {
             format!(
@@ -1018,6 +1042,8 @@ pub struct SerializableProgressInfo {
     #[serde(default)]
     encoding_stats: (SerializableEncoderStats, SerializableEncoderStats),
     total_frames: usize,
+    #[serde(default)]
+    frame_limit: Option<u64>,
 }
 
 impl From<&ProgressInfo> for SerializableProgressInfo {
@@ -1039,6 +1065,7 @@ impl From<&ProgressInfo> for SerializableProgressInfo {
                 (&other.encoding_stats.1).into(),
             ),
             total_frames: other.total_frames,
+            frame_limit: other.frame_limit,
         }
     }
 }
@@ -1059,6 +1086,7 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
                 (&other.encoding_stats.1).into(),
             ),
             total_frames: other.total_frames,
+            frame_limit: other.frame_limit,
         }
     }
 }

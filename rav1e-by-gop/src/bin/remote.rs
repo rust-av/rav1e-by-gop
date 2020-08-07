@@ -163,6 +163,7 @@ pub(crate) fn remote_encode_segment<T: Pixel + DeserializeOwned + Default>(
         },
         encode_info.segment_idx,
         encode_info.next_analysis_frame,
+        None,
     );
     let _ = connection
         .progress_sender
