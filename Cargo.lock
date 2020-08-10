@@ -26,9 +26,9 @@ checksum = "6b602bfe940d21c130f3895acd65221e8a61270debe89d628b9cb4e3ccb8569b"
 
 [[package]]
 name = "arbitrary"
-version = "0.2.0"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64cf76cb6e2222ed0ea86b2b0ee2f71c96ec6edd5af42e84d59160e91b836ec4"
+checksum = "7cb544f1057eaaff4b34f8c4dcf56fc3cd04debd291998405d135017a7c3c0f4"
 
 [[package]]
 name = "arg_enum_proc_macro"
@@ -77,7 +77,7 @@ dependencies = [
  "libc",
  "nasm-rs",
  "num-traits",
- "paste",
+ "paste 0.1.18",
  "serde",
  "v_frame",
  "y4m 0.5.3",
@@ -724,6 +724,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "paste"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6ddc8e145de01d9180ac7b78b9676f95a9c2447f6a88b2c2a04702211bc5d71"
+
+[[package]]
 name = "paste-impl"
 version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -824,7 +830,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.3.0"
-source = "git+https://github.com/xiph/rav1e#fe61a877488da642ae8c0844d31ff62f8b2ba66e"
+source = "git+https://github.com/xiph/rav1e#a811e9ef43e36ca9334146ca3a993a964ae45168"
 dependencies = [
  "arbitrary",
  "arg_enum_proc_macro",
@@ -840,7 +846,7 @@ dependencies = [
  "noop_proc_macro",
  "num-derive",
  "num-traits",
- "paste",
+ "paste 1.0.0",
  "rand",
  "rand_chacha",
  "rayon",
@@ -1334,7 +1340,7 @@ dependencies = [
 [[package]]
 name = "v_frame"
 version = "0.1.0"
-source = "git+https://github.com/xiph/rav1e#fe61a877488da642ae8c0844d31ff62f8b2ba66e"
+source = "git+https://github.com/xiph/rav1e#a811e9ef43e36ca9334146ca3a993a964ae45168"
 dependencies = [
  "cfg-if",
  "noop_proc_macro",
@@ -1358,7 +1364,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#fe61a877488da642ae8c0844d31ff62f8b2ba66e"
+source = "git+https://github.com/xiph/rav1e#a811e9ef43e36ca9334146ca3a993a964ae45168"
 dependencies = [
  "bitflags",
  "chrono",
