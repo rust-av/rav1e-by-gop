@@ -256,11 +256,17 @@ pub fn perform_encode_inner<
 
     let mut num_segments = 0;
     if num_threads > 0 {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .unwrap();
+        let pool = Arc::new(pool);
         let _ = listen_for_local_workers::<T>(
             EncodeOptions::from(opts),
             &opts.output,
             &mut num_segments,
             thread_pool.as_mut().unwrap(),
+            pool,
             video_info,
             &progress_channels,
             analyzer_channel.1,
@@ -337,6 +343,7 @@ fn listen_for_local_workers<T: Pixel>(
     output_file: &Path,
     num_segments: &mut usize,
     thread_pool: &mut ThreadPool,
+    rayon_pool: Arc<rayon::ThreadPool>,
     video_info: VideoDetails,
     progress_channels: &[ProgressChannel],
     analyzer_receiver: AnalyzerReceiver,
@@ -352,6 +359,7 @@ fn listen_for_local_workers<T: Pixel>(
                     video_info,
                     data,
                     thread_pool,
+                    rayon_pool.clone(),
                     progress_channels[slot].0.clone(),
                     get_segment_output_filename(output_file, segment_idx),
                 )?;
