@@ -103,7 +103,7 @@ fn do_encode<T: Pixel + DeserializeOwned>(
             video_info,
             source.frame_count(),
         )
-        .with_thread_pool(pool.clone());
+        .with_thread_pool(pool);
         let mut source = source.clone();
         let mut ctx: Context<T> = cfg.new_context()?;
         let mut progress_counter = 0;
