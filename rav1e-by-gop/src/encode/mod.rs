@@ -30,6 +30,7 @@ pub fn encode_segment(
     video_info: VideoDetails,
     data: SegmentData,
     thread_pool: &mut ThreadPool,
+    rayon_pool: Arc<rayon::ThreadPool>,
     progress_sender: ProgressSender,
     segment_output_file: PathBuf,
 ) -> Result<()> {
@@ -57,6 +58,7 @@ pub fn encode_segment(
         };
         if video_info.bit_depth > 8 {
             do_encode::<u16>(
+                rayon_pool,
                 opts,
                 video_info,
                 source,
@@ -67,6 +69,7 @@ pub fn encode_segment(
             .expect("Failed encoding segment");
         } else {
             do_encode::<u8>(
+                rayon_pool,
                 opts,
                 video_info,
                 source,
@@ -81,6 +84,7 @@ pub fn encode_segment(
 }
 
 fn do_encode<T: Pixel + DeserializeOwned>(
+    pool: Arc<rayon::ThreadPool>,
     opts: EncodeOptions,
     video_info: VideoDetails,
     mut source: Source,
@@ -98,7 +102,8 @@ fn do_encode<T: Pixel + DeserializeOwned>(
             opts.max_bitrate,
             video_info,
             source.frame_count(),
-        );
+        )
+        .with_thread_pool(pool);
         let mut source = source.clone();
         let mut ctx: Context<T> = cfg.new_context()?;
         let mut progress_counter = 0;
