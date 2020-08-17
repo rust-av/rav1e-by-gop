@@ -27,7 +27,6 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use std::{cmp, thread};
-use threadpool::ThreadPool;
 use y4m::Decoder;
 
 pub fn perform_encode(
@@ -123,11 +122,6 @@ pub fn perform_encode_inner<
         bail!("Cannot disable local threads without having remote workers available!");
     }
 
-    let mut thread_pool = if num_threads > 0 {
-        Some(ThreadPool::new(num_threads))
-    } else {
-        None
-    };
     let rayon_pool = Arc::new(
         rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
@@ -266,16 +260,14 @@ pub fn perform_encode_inner<
     let mut num_segments = 0;
     if num_threads > 0 {
         let _ = listen_for_local_workers::<T>(
+            num_threads,
             EncodeOptions::from(opts),
             &opts.output,
             &mut num_segments,
-            thread_pool.as_mut().unwrap(),
-            rayon_pool,
             video_info,
             &progress_channels,
             analyzer_channel.1,
         );
-        thread_pool.unwrap().join();
     }
     let _ = remote_listener.join();
 
@@ -342,28 +334,31 @@ fn watch_worker_updates(
     }
 }
 
-fn listen_for_local_workers<T: Pixel>(
+fn listen_for_local_workers<T: Pixel + DeserializeOwned>(
+    num_threads: usize,
     encode_opts: EncodeOptions,
     output_file: &Path,
     num_segments: &mut usize,
-    thread_pool: &mut ThreadPool,
-    rayon_pool: Arc<rayon::ThreadPool>,
     video_info: VideoDetails,
     progress_channels: &[ProgressChannel],
     analyzer_receiver: AnalyzerReceiver,
 ) -> Result<()> {
+    let ctx: api::Context<T> = api::Config::new()
+        .with_encoder_config(build_base_encoder_config(
+            encode_opts.speed,
+            encode_opts.qp,
+            video_info,
+        ))
+        .with_threads(num_threads)
+        .new_context();
     loop {
         match analyzer_receiver.try_recv() {
             Ok(Some(data)) => {
                 let slot = data.slot;
                 let segment_idx = data.segment_no + 1;
                 *num_segments = cmp::max(*num_segments, segment_idx);
-                encode_segment(
-                    encode_opts,
-                    video_info,
+                ctx.encode_segment(
                     data,
-                    thread_pool,
-                    rayon_pool.clone(),
                     progress_channels[slot].0.clone(),
                     get_segment_output_filename(output_file, segment_idx),
                 )?;

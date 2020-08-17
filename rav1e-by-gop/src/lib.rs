@@ -1,5 +1,6 @@
 #![allow(clippy::cognitive_complexity)]
 
+pub mod api;
 pub mod compress;
 pub mod encode;
 pub mod muxer;
@@ -9,6 +10,7 @@ pub use self::compress::*;
 pub use self::encode::*;
 pub use self::muxer::*;
 pub use self::remote::*;
+
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::{Deserialize, Serialize};
