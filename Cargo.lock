@@ -852,7 +852,6 @@ dependencies = [
  "serde",
  "systemstat",
  "thiserror",
- "threadpool",
  "toml",
  "tungstenite",
  "url",

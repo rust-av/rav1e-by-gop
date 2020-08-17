@@ -2,21 +2,15 @@ pub mod stats;
 
 pub use self::stats::*;
 
-use super::VideoDetails;
-use crate::{build_encoder_config, create_memory_muxer, decompress_frame, Muxer, SegmentData};
+use crate::decompress_frame;
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use systemstat::data::ByteSize;
-use threadpool::ThreadPool;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EncodeOptions {
@@ -24,64 +18,7 @@ pub struct EncodeOptions {
     pub qp: usize,
 }
 
-pub fn encode_segment(
-    opts: EncodeOptions,
-    video_info: VideoDetails,
-    data: SegmentData,
-    thread_pool: &mut ThreadPool,
-    rayon_pool: Arc<rayon::ThreadPool>,
-    progress_sender: ProgressSender,
-    segment_output_file: PathBuf,
-) -> Result<()> {
-    let progress = ProgressInfo::new(
-        Rational {
-            num: video_info.time_base.den,
-            den: video_info.time_base.num,
-        },
-        data.compressed_frames.len(),
-        {
-            let mut kf = BTreeSet::new();
-            kf.insert(data.start_frameno);
-            kf
-        },
-        data.segment_no + 1,
-        data.next_analysis_frame,
-        None,
-    );
-    let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
-
-    thread_pool.execute(move || {
-        let source = Source {
-            compressed_frames: data.compressed_frames.into_iter().map(Rc::new).collect(),
-            sent_count: 0,
-        };
-        if video_info.bit_depth > 8 {
-            do_encode::<u16>(
-                rayon_pool,
-                opts,
-                video_info,
-                source,
-                segment_output_file,
-                progress,
-                progress_sender,
-            )
-            .expect("Failed encoding segment");
-        } else {
-            do_encode::<u8>(
-                rayon_pool,
-                opts,
-                video_info,
-                source,
-                segment_output_file,
-                progress,
-                progress_sender,
-            )
-            .expect("Failed encoding segment");
-        }
-    });
-    Ok(())
-}
-
+/*
 fn do_encode<T: Pixel + DeserializeOwned>(
     pool: Arc<rayon::ThreadPool>,
     opts: EncodeOptions,
@@ -122,6 +59,7 @@ fn do_encode<T: Pixel + DeserializeOwned>(
 
     Ok(progress)
 }
+*/
 
 #[derive(Clone)]
 pub struct Source {

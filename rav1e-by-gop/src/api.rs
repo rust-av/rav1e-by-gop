@@ -59,7 +59,6 @@ impl Config {
 pub struct Context<T: Pixel> {
     base: EncoderConfig,
     pool: Arc<ThreadPool>,
-    workers_pool: threadpool::ThreadPool,
     _pd: std::marker::PhantomData<T>,
 }
 
@@ -73,12 +72,9 @@ impl Config {
             Arc::new(p)
         });
 
-        let workers_pool = threadpool::ThreadPool::new(self.threads);
-
         Context {
             pool,
             base: self.base,
-            workers_pool,
             _pd: std::marker::PhantomData,
         }
     }
@@ -119,7 +115,7 @@ impl<T: Pixel + DeserializeOwned> Context<T> {
             .new_context()
             .expect("Cannot setup the encoder");
 
-        self.workers_pool.execute(move || {
+        self.pool.spawn(move || {
             let mut source = Source {
                 compressed_frames: data.compressed_frames.into_iter().map(Rc::new).collect(),
                 sent_count: 0,

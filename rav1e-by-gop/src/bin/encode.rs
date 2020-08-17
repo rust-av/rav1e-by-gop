@@ -175,7 +175,7 @@ pub fn perform_encode_inner<
     let remote_slots_ref = remote_slots.clone();
     let input_finished_receiver = input_finished_channel.1.clone();
     let max_frames = opts.max_frames;
-    s.spawn(move |_| {
+    let progress_listener = s.spawn(move |_| {
         watch_progress_receivers(
             receivers,
             slots_ref,
@@ -270,6 +270,7 @@ pub fn perform_encode_inner<
         );
     }
     let _ = remote_listener.join();
+    let _ = progress_listener.join();
 
     mux_output_files(&opts.output, num_segments)?;
 
