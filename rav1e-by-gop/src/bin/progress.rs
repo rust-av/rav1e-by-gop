@@ -93,6 +93,7 @@ pub(crate) fn watch_progress_receivers(
     input_finished_receiver: InputFinishedReceiver,
     display_progress: bool,
     max_frames: Option<u64>,
+    segment_complete_sender: crossbeam_channel::Sender<usize>,
 ) {
     let slots_count = slots.lock().unwrap().len();
     let segments_pb_holder = MultiProgress::new();
@@ -124,6 +125,9 @@ pub(crate) fn watch_progress_receivers(
     loop {
         for (slot, rx) in receivers.iter().enumerate() {
             while let Ok(msg) = rx.try_recv() {
+                if let ProgressStatus::Encoded(segment_idx) = msg {
+                    segment_complete_sender.send(segment_idx).unwrap();
+                }
                 if update_progress(
                     msg,
                     &mut overall_progress,
@@ -248,6 +252,10 @@ fn update_progress(
             pb.reset_elapsed();
             pb.set_position(0);
             pb.set_length(0);
+            false
+        }
+        ProgressStatus::Encoded(_) => {
+            debug!("The segment is fully encoded");
             false
         }
     }

@@ -5,7 +5,6 @@ use crate::analyze::{
 };
 use crate::decide_thread_count;
 use crate::decode::*;
-use crate::muxer::create_file_muxer;
 use crate::progress::*;
 use crate::remote::{discover_remote_worker, remote_encode_segment, RemoteWorkerInfo};
 use crate::CliOptions;
@@ -18,15 +17,15 @@ use rav1e::prelude::*;
 use rav1e_by_gop::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::cmp;
 use std::collections::BTreeSet;
 use std::fs::remove_file;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Read};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
-use std::{cmp, thread};
 use y4m::Decoder;
 
 pub fn perform_encode(
@@ -156,6 +155,7 @@ pub fn perform_encode_inner<
     let progress_channels: Vec<ProgressChannel> = (0..(num_threads + worker_thread_count))
         .map(|_| unbounded())
         .collect();
+    let (segment_complete_send, segment_complete_receive) = unbounded();
     let input_finished_channel: InputFinishedChannel = bounded(1);
     let slots: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![false; num_threads]));
     let remote_slots = Arc::new(Mutex::new(remote_workers));
@@ -186,6 +186,7 @@ pub fn perform_encode_inner<
             input_finished_receiver,
             display_progress,
             max_frames,
+            segment_complete_send,
         );
     });
 
@@ -233,17 +234,48 @@ pub fn perform_encode_inner<
         s.spawn(move |_| watch_worker_updates(remote_slots_ref, receiver, input_finished_receiver));
     }
 
-    // Write only the ivf header
-    create_file_muxer(&get_segment_output_filename(&opts.output, 0))
-        .map(|mut output| {
-            output.write_header(
-                video_info.width,
-                video_info.height,
-                video_info.time_base.den as usize,
-                video_info.time_base.num as usize,
-            );
-        })
-        .expect("Failed to create segment output");
+    let outfile = opts.output.clone();
+    let mut out = BufWriter::new(File::create(&outfile)?);
+
+    let mux_output = s.spawn(move |_| -> Result<()> {
+        ivf::write_ivf_header(
+            &mut out,
+            video_info.width,
+            video_info.height,
+            video_info.time_base.den as usize,
+            video_info.time_base.num as usize,
+        );
+
+        let mut indexes = BTreeSet::new();
+        let mut last_idx = 1;
+        let mut pts = 0;
+
+        for seg_idx in segment_complete_receive.iter() {
+            indexes.insert(seg_idx);
+            while indexes.take(&last_idx).is_some() {
+                let seg_filename = get_segment_output_filename(&outfile, last_idx);
+                let mut in_seg = File::open(&seg_filename)?;
+                loop {
+                    match ivf::read_packet(&mut in_seg) {
+                        Ok(pkt) => {
+                            ivf::write_ivf_frame(&mut out, pts, &pkt.data);
+                            pts += 1;
+                        }
+                        Err(err) => match err.kind() {
+                            std::io::ErrorKind::UnexpectedEof => break,
+                            _ => return Err(err.into()),
+                        },
+                    }
+                }
+                let _ = remove_file(&seg_filename)?;
+                last_idx += 1;
+            }
+        }
+
+        let _ = remove_file(get_progress_filename(&outfile))?;
+
+        Ok(())
+    });
 
     let input_finished_receiver = input_finished_channel.1;
     let remote_analyzer_receiver = remote_analyzer_channel.1;
@@ -271,8 +303,7 @@ pub fn perform_encode_inner<
     }
     let _ = remote_listener.join();
     let _ = progress_listener.join();
-
-    mux_output_files(&opts.output, num_segments)?;
+    let _ = mux_output.join();
 
     Ok(())
 }
@@ -415,42 +446,4 @@ fn listen_for_remote_workers(
     for thread in threads {
         thread.join().unwrap();
     }
-}
-
-fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<()> {
-    let mut out = BufWriter::new(File::create(out_filename)?);
-    let segments =
-        (0..=num_segments).map(|seg_idx| get_segment_output_filename(out_filename, seg_idx));
-    let mut files = segments.clone();
-    let header = files.next().unwrap();
-    std::io::copy(&mut File::open(header)?, &mut out)?;
-
-    let mut pts = 0;
-    for seg_filename in files {
-        let mut in_seg = BufReader::new(File::open(seg_filename)?);
-        loop {
-            match ivf::read_packet(&mut in_seg) {
-                Ok(pkt) => {
-                    ivf::write_ivf_frame(&mut out, pts, &pkt.data);
-                    pts += 1;
-                }
-                Err(err) => match err.kind() {
-                    std::io::ErrorKind::UnexpectedEof => break,
-                    _ => return Err(err.into()),
-                },
-            }
-        }
-    }
-    out.flush()?;
-
-    // Allow the progress indicator thread
-    // enough time to output the end-of-encode stats
-    thread::sleep(Duration::from_secs(3));
-
-    for segment in segments {
-        let _ = remove_file(segment);
-    }
-    let _ = remove_file(get_progress_filename(out_filename));
-
-    Ok(())
 }

@@ -142,6 +142,7 @@ impl<T: Pixel + DeserializeOwned> Context<T> {
                     }
                     ProcessFrameResult::EndOfSegment => {
                         output.flush().unwrap();
+                        let _ = progress_sender.send(ProgressStatus::Encoded(progress.segment_idx));
                         break;
                     }
                 }

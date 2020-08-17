@@ -129,4 +129,5 @@ pub enum ProgressStatus {
     Compressing(usize),
     Sending(ByteSize),
     Encoding(Box<ProgressInfo>),
+    Encoded(usize),
 }
