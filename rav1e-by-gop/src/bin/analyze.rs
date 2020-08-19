@@ -81,6 +81,7 @@ pub(crate) fn run_first_pass<
     let speed = opts.speed;
     let qp = opts.qp;
     let max_bitrate = opts.max_bitrate;
+    let tiles = opts.tiles;
     scope.spawn(move |s| {
         slot_checker_loop::<T>(
             pool_handle,
@@ -93,6 +94,7 @@ pub(crate) fn run_first_pass<
             speed,
             qp,
             max_bitrate,
+            tiles,
         );
     });
 
@@ -116,7 +118,8 @@ pub(crate) fn run_first_pass<
             keyframes.insert(0);
             let mut lookahead_queue: BTreeMap<usize, Arc<Frame<T>>> = BTreeMap::new();
 
-            let enc_cfg = build_encoder_config(opts.speed, opts.qp, opts.max_bitrate, video_info, rayon_pool);
+            let enc_cfg =
+                build_config(opts.speed, opts.qp, opts.max_bitrate, opts.tiles, video_info, rayon_pool);
             let ctx: Context<T> = enc_cfg.new_context::<T>().unwrap();
 
             while let Ok(message) = slot_ready_listener.recv() {
@@ -469,6 +472,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
     speed: usize,
     qp: usize,
     max_bitrate: Option<i32>,
+    tiles: usize,
 ) {
     loop {
         if input_finished_receiver.is_full() {
@@ -506,6 +510,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
                             speed,
                             qp,
                             max_bitrate,
+                            tiles,
                         },
                         video_info,
                         client_version: semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap(),

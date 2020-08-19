@@ -112,28 +112,30 @@ pub enum SlotStatus {
     Requested,
 }
 
-pub fn build_encoder_config(
+pub fn build_config(
     speed: usize,
     qp: usize,
     max_bitrate: Option<i32>,
+    tiles: usize,
     video_info: VideoDetails,
     pool: Arc<rayon::ThreadPool>,
 ) -> Config {
     Config::new()
-        .with_threads(1)
-        .with_encoder_config(build_base_encoder_config(
+        .with_encoder_config(build_encoder_config(
             speed,
             qp,
             max_bitrate,
+            tiles,
             video_info,
         ))
         .with_thread_pool(pool)
 }
 
-pub fn build_base_encoder_config(
+pub fn build_encoder_config(
     speed: usize,
     qp: usize,
     max_bitrate: Option<i32>,
+    tiles: usize,
     video_info: VideoDetails,
 ) -> EncoderConfig {
     let mut enc_config = EncoderConfig::with_speed_preset(speed);
@@ -143,7 +145,7 @@ pub fn build_base_encoder_config(
     enc_config.chroma_sampling = video_info.chroma_sampling;
     enc_config.chroma_sample_position = video_info.chroma_sample_position;
     enc_config.time_base = video_info.time_base;
-    enc_config.tiles = 1;
+    enc_config.tiles = tiles;
     enc_config.min_key_frame_interval = 0;
     enc_config.max_key_frame_interval = u16::max_value() as u64;
     enc_config.speed_settings.no_scene_detection = true;

@@ -4,7 +4,7 @@ pub use self::stats::*;
 
 use super::VideoDetails;
 use crate::muxer::create_muxer;
-use crate::{build_encoder_config, decompress_frame, Output, SegmentData, SegmentFrameData};
+use crate::{build_config, decompress_frame, Output, SegmentData, SegmentFrameData};
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
 use crossbeam_channel::{Receiver, Sender};
@@ -25,6 +25,7 @@ pub struct EncodeOptions {
     pub speed: usize,
     pub qp: usize,
     pub max_bitrate: Option<i32>,
+    pub tiles: usize,
 }
 
 pub fn encode_segment(
@@ -110,7 +111,14 @@ fn do_encode<T: Pixel + DeserializeOwned>(
     mut progress: ProgressInfo,
     progress_sender: ProgressSender,
 ) -> Result<ProgressInfo> {
-    let cfg = build_encoder_config(opts.speed, opts.qp, opts.max_bitrate, video_info, pool);
+    let cfg = build_config(
+        opts.speed,
+        opts.qp,
+        opts.max_bitrate,
+        opts.tiles,
+        video_info,
+        pool,
+    );
 
     let mut ctx: Context<T> = cfg.new_context()?;
     let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));

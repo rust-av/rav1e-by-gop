@@ -142,6 +142,12 @@ fn main() -> Result<()> {
             .long("no-progress")
             .hidden(true)
         )
+        .arg(Arg::with_name("TILES")
+            .help("Sets the number of tiles to use")
+            .long("tiles")
+            .short("t")
+            .default_value("1")
+        )
         .arg(
             Arg::with_name("WORKERS")
                 .help("A path to the TOML file defining remote encoding workers")
@@ -157,6 +163,12 @@ fn main() -> Result<()> {
         .arg(Arg::with_name("INPUT_TEMP_FILES")
             .help("Write y4m input segments to temporary files instead of keeping them in memory. Reduces memory usage but increases disk usage. Should enable more segments to run simultaneously.")
             .long("tmp-input"))
+        .arg(
+            Arg::with_name("LOCAL_WORKERS")
+                .help("Limit the maximum number of local workers that can be used")
+                .long("local-workers")
+                .takes_value(true),
+        )
         .get_matches();
     let opts = CliOptions::from(&matches);
     ensure!(
@@ -195,6 +207,8 @@ pub struct CliOptions {
     min_keyint: u64,
     max_keyint: u64,
     max_threads: Option<usize>,
+    local_workers: Option<usize>,
+    tiles: usize,
     max_frames: Option<u64>,
     verbose: bool,
     memory_usage: MemoryUsage,
@@ -240,6 +254,10 @@ impl From<&ArgMatches<'_>> for CliOptions {
             max_threads: matches
                 .value_of("MAX_THREADS")
                 .map(|threads| threads.parse().unwrap()),
+            tiles: matches.value_of("TILES").unwrap().parse().unwrap(),
+            local_workers: matches
+                .value_of("LOCAL_WORKERS")
+                .map(|workers| workers.parse().unwrap()),
             max_frames: matches
                 .value_of("FRAMES")
                 .map(|frames| frames.parse().unwrap()),
@@ -284,6 +302,7 @@ impl From<&CliOptions> for EncodeOptions {
             speed: other.speed,
             qp: other.qp,
             max_bitrate: other.max_bitrate,
+            tiles: other.tiles,
         }
     }
 }

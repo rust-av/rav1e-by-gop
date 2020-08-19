@@ -153,10 +153,11 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
         },
         sent_count: 0,
     };
-    let cfg = build_encoder_config(
+    let cfg = build_config(
         options.speed,
         options.qp,
         options.max_bitrate,
+        options.tiles,
         video_info,
         pool,
     );
