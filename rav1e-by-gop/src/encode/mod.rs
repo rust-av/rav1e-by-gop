@@ -16,6 +16,7 @@ use systemstat::data::ByteSize;
 pub struct EncodeOptions {
     pub speed: usize,
     pub qp: usize,
+    pub tiles: usize,
 }
 
 /*

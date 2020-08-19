@@ -77,6 +77,7 @@ pub(crate) fn run_first_pass<
     let pool_handle = slot_pool.clone();
     let speed = opts.speed;
     let qp = opts.qp;
+    let tiles = opts.tiles;
     scope.spawn(move |s| {
         slot_checker_loop::<T>(
             pool_handle,
@@ -88,6 +89,7 @@ pub(crate) fn run_first_pass<
             video_info,
             speed,
             qp,
+            tiles,
         );
     });
 
@@ -112,7 +114,8 @@ pub(crate) fn run_first_pass<
             keyframes.insert(0);
             let mut lookahead_queue: BTreeMap<usize, Frame<T>> = BTreeMap::new();
 
-            let enc_cfg = build_encoder_config(opts.speed, opts.qp, video_info, rayon_pool);
+            let enc_cfg =
+                build_encoder_config(opts.speed, opts.qp, opts.tiles, video_info, rayon_pool);
             let ctx: Context<T> = enc_cfg.new_context::<T>().unwrap();
 
             while let Ok(message) = slot_ready_listener.recv() {
@@ -371,6 +374,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
     video_info: VideoDetails,
     speed: usize,
     qp: usize,
+    tiles: usize,
 ) {
     loop {
         if input_finished_receiver.is_full() {
@@ -415,7 +419,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
                 };
                 if let Err(e) = connection.write_message(Message::Binary(
                     rmp_serde::to_vec(&SlotRequestMessage {
-                        options: EncodeOptions { speed, qp },
+                        options: EncodeOptions { speed, qp, tiles },
                         video_info,
                         client_version: semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap(),
                     })

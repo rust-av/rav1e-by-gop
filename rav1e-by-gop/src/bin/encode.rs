@@ -107,9 +107,6 @@ pub fn perform_encode_inner<
         .sum::<usize>();
 
     let num_threads = decide_thread_count(opts, &video_info, !remote_workers.is_empty());
-    if num_threads > 0 {
-        info!("Using {} encoder threads", style(num_threads).cyan());
-    }
 
     if !remote_workers.is_empty() {
         info!(
@@ -150,14 +147,33 @@ pub fn perform_encode_inner<
         progress
     };
 
+    let num_local_slots = if num_threads == 0 {
+        0
+    } else {
+        let local_workers = opts.local_workers.unwrap_or_else(|| {
+            // workers tend to use about 56% of the available cpus
+            // tiles tend to use about the 40% of the available cpus
+            // letting rayon schedule the workload seems to deal with starvation
+            // reserve 1 thread for 4 parallel tiles
+
+            num_threads - opts.tiles * 2 / 8
+        });
+        info!(
+            "Using {} encoder threads ({} local workers)",
+            style(num_threads).cyan(),
+            style(local_workers).cyan()
+        );
+        local_workers
+    };
+
     let analyzer_channel: AnalyzerChannel = unbounded();
     let remote_analyzer_channel: RemoteAnalyzerChannel = unbounded();
-    let progress_channels: Vec<ProgressChannel> = (0..(num_threads + worker_thread_count))
+    let progress_channels: Vec<ProgressChannel> = (0..(num_local_slots + worker_thread_count))
         .map(|_| unbounded())
         .collect();
     let (segment_complete_send, segment_complete_receive) = unbounded();
     let input_finished_channel: InputFinishedChannel = bounded(1);
-    let slots: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![false; num_threads]));
+    let slots: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![false; num_local_slots]));
     let remote_slots = Arc::new(Mutex::new(remote_workers));
 
     let output_file = opts.output.to_owned();
@@ -202,7 +218,7 @@ pub fn perform_encode_inner<
         .collect::<Vec<_>>();
     let remote_progress_senders = progress_senders
         .iter()
-        .skip(num_threads)
+        .skip(num_local_slots)
         .cloned()
         .collect::<Vec<_>>();
     let rayon_handle = rayon_pool.clone();
@@ -292,7 +308,7 @@ pub fn perform_encode_inner<
     let mut num_segments = 0;
     if num_threads > 0 {
         let _ = listen_for_local_workers::<T>(
-            num_threads,
+            rayon_pool,
             EncodeOptions::from(opts),
             &opts.output,
             &mut num_segments,
@@ -367,7 +383,7 @@ fn watch_worker_updates(
 }
 
 fn listen_for_local_workers<T: Pixel + DeserializeOwned>(
-    num_threads: usize,
+    pool: Arc<rayon::ThreadPool>,
     encode_opts: EncodeOptions,
     output_file: &Path,
     num_segments: &mut usize,
@@ -379,9 +395,10 @@ fn listen_for_local_workers<T: Pixel + DeserializeOwned>(
         .with_encoder_config(build_base_encoder_config(
             encode_opts.speed,
             encode_opts.qp,
+            encode_opts.tiles,
             video_info,
         ))
-        .with_threads(num_threads)
+        .with_thread_pool(pool)
         .new_context();
     loop {
         match analyzer_receiver.try_recv() {
