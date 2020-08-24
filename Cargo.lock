@@ -892,7 +892,7 @@ dependencies = [
  "url",
  "uuid",
  "v_frame",
- "y4m 0.6.1",
+ "y4m 0.7.0",
  "zstd",
 ]
 
@@ -1422,9 +1422,9 @@ checksum = "9fe949ca02097f3652d75341496d47ea37b110f6e2c6e7be019e18bfce3163a4"
 
 [[package]]
 name = "y4m"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab81337824b9776970061619ee7266b2331af3f3d06e454dae383b1a55eaa17f"
+checksum = "a72a9921af8237fe25097a1ae31c92a05c1d39b2454653ad48f2f407cf7a0dae"
 
 [[package]]
 name = "zstd"
