@@ -75,7 +75,7 @@ checksum = "8a0f00d55dac07eaa3e4ce9f9d366d2ecb241933a306b2ff473fb16aecd3b1e5"
 dependencies = [
  "arrayvec",
  "libc",
- "nasm-rs",
+ "nasm-rs 0.1.7",
  "num-traits",
  "paste 0.1.18",
  "serde",
@@ -580,7 +580,14 @@ name = "nasm-rs"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fea4fa2ba8f650120445ddcf137d8a6370ff01d55f00e6b29e0ab01b7c846464"
+
+[[package]]
+name = "nasm-rs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a76f43faa0d13f9c89f72e1972446d558f003cfffb80eb16bb444231de1becd1"
 dependencies = [
+ "arrayvec",
  "rayon",
 ]
 
@@ -819,7 +826,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.3.0"
-source = "git+https://github.com/xiph/rav1e#325ae51558cec45e7c7e96b0121c3b966cdeca7c"
+source = "git+https://github.com/xiph/rav1e#8e3e36104511a325fa747887fe97f76a7baa105e"
 dependencies = [
  "arbitrary",
  "arg_enum_proc_macro",
@@ -831,7 +838,7 @@ dependencies = [
  "itertools",
  "libc",
  "log",
- "nasm-rs",
+ "nasm-rs 0.2.0",
  "noop_proc_macro",
  "num-derive",
  "num-traits",
@@ -1330,7 +1337,7 @@ dependencies = [
 [[package]]
 name = "v_frame"
 version = "0.1.0"
-source = "git+https://github.com/xiph/rav1e#325ae51558cec45e7c7e96b0121c3b966cdeca7c"
+source = "git+https://github.com/xiph/rav1e#8e3e36104511a325fa747887fe97f76a7baa105e"
 dependencies = [
  "cfg-if",
  "noop_proc_macro",
@@ -1354,7 +1361,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#325ae51558cec45e7c7e96b0121c3b966cdeca7c"
+source = "git+https://github.com/xiph/rav1e#8e3e36104511a325fa747887fe97f76a7baa105e"
 dependencies = [
  "bitflags",
  "chrono",
