@@ -52,8 +52,9 @@ pub(crate) fn run_first_pass<
     remote_progress_senders: Vec<ProgressSender>,
     input_finished_sender: InputFinishedSender,
     input_finished_receiver: InputFinishedReceiver,
-    pool: Arc<Mutex<Vec<bool>>>,
+    slot_pool: Arc<Mutex<Vec<bool>>>,
     remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
+    rayon_pool: Arc<rayon::ThreadPool>,
     next_frameno: usize,
     known_keyframes: BTreeSet<usize>,
     skipped_segments: BTreeSet<usize>,
@@ -73,10 +74,9 @@ pub(crate) fn run_first_pass<
     // Wait for an open slot before loading more frames,
     // to reduce memory usage.
     let slot_ready_sender = slot_ready_channel.0.clone();
-    let pool_handle = pool.clone();
+    let pool_handle = slot_pool.clone();
     let speed = opts.speed;
     let qp = opts.qp;
-    let max_bitrate = opts.max_bitrate;
     scope.spawn(move |s| {
         slot_checker_loop::<T>(
             pool_handle,
@@ -88,11 +88,10 @@ pub(crate) fn run_first_pass<
             video_info,
             speed,
             qp,
-            max_bitrate,
         );
     });
 
-    let pool_handle = pool.clone();
+    let pool_handle = slot_pool.clone();
     let slot_ready_listener = slot_ready_channel.1.clone();
     let lookahead_distance = sc_opts.lookahead_distance;
     let frame_limit = opts
@@ -113,8 +112,7 @@ pub(crate) fn run_first_pass<
             keyframes.insert(0);
             let mut lookahead_queue: BTreeMap<usize, Frame<T>> = BTreeMap::new();
 
-            let enc_cfg =
-                build_encoder_config(opts.speed, opts.qp, opts.max_bitrate, video_info, 12, None);
+            let enc_cfg = build_encoder_config(opts.speed, opts.qp, video_info, rayon_pool);
             let ctx: Context<T> = enc_cfg.new_context::<T>().unwrap();
 
             while let Ok(message) = slot_ready_listener.recv() {
@@ -348,7 +346,7 @@ pub(crate) fn run_first_pass<
     while let Ok(message) = slot_ready_channel.1.try_recv() {
         match message {
             Slot::Local(slot) => {
-                pool.lock().unwrap()[slot] = false;
+                slot_pool.lock().unwrap()[slot] = false;
             }
             Slot::Remote(connection) => {
                 connection
@@ -373,7 +371,6 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
     video_info: VideoDetails,
     speed: usize,
     qp: usize,
-    max_bitrate: Option<i32>,
 ) {
     loop {
         if input_finished_receiver.is_full() {
@@ -418,11 +415,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
                 };
                 if let Err(e) = connection.write_message(Message::Binary(
                     rmp_serde::to_vec(&SlotRequestMessage {
-                        options: EncodeOptions {
-                            speed,
-                            qp,
-                            max_bitrate,
-                        },
+                        options: EncodeOptions { speed, qp },
                         video_info,
                         client_version: semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap(),
                     })

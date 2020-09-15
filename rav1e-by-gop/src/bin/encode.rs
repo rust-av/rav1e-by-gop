@@ -128,6 +128,13 @@ pub fn perform_encode_inner<
     } else {
         None
     };
+    let rayon_pool = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .unwrap(),
+    );
+
     let overall_progress = if let Some(progress) = progress {
         progress
     } else {
@@ -203,6 +210,7 @@ pub fn perform_encode_inner<
         .skip(num_threads)
         .cloned()
         .collect::<Vec<_>>();
+    let rayon_handle = rayon_pool.clone();
     s.spawn(move |s| {
         run_first_pass::<T, R>(
             dec,
@@ -215,6 +223,7 @@ pub fn perform_encode_inner<
             input_finished_receiver,
             slots,
             remote_slots_ref,
+            rayon_handle,
             start_frameno,
             known_keyframes,
             skipped_segments,
@@ -256,17 +265,12 @@ pub fn perform_encode_inner<
 
     let mut num_segments = 0;
     if num_threads > 0 {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(num_threads)
-            .build()
-            .unwrap();
-        let pool = Arc::new(pool);
         let _ = listen_for_local_workers::<T>(
             EncodeOptions::from(opts),
             &opts.output,
             &mut num_segments,
             thread_pool.as_mut().unwrap(),
-            pool,
+            rayon_pool,
             video_info,
             &progress_channels,
             analyzer_channel.1,

@@ -882,6 +882,7 @@ dependencies = [
  "num_cpus",
  "rav1e",
  "rav1e-by-gop",
+ "rayon",
  "rmp-serde",
  "semver 0.10.0",
  "serde",

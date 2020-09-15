@@ -4,14 +4,13 @@ pub use self::stats::*;
 
 use super::VideoDetails;
 use crate::muxer::create_muxer;
-use crate::{build_encoder_config, build_first_pass_encoder_config, decompress_frame, SegmentData};
+use crate::{build_encoder_config, decompress_frame, SegmentData};
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::io::{Cursor, Read};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -22,7 +21,6 @@ use threadpool::ThreadPool;
 pub struct EncodeOptions {
     pub speed: usize,
     pub qp: usize,
-    pub max_bitrate: Option<i32>,
 }
 
 pub fn encode_segment(
@@ -92,100 +90,13 @@ fn do_encode<T: Pixel + DeserializeOwned>(
     mut progress: ProgressInfo,
     progress_sender: ProgressSender,
 ) -> Result<ProgressInfo> {
-    let do_two_pass = opts.max_bitrate.is_some();
-
-    let mut first_pass_data = Vec::new();
-    if do_two_pass {
-        let cfg = build_first_pass_encoder_config(
-            opts.speed,
-            opts.qp,
-            opts.max_bitrate,
-            video_info,
-            source.frame_count(),
-        )
-        .with_thread_pool(pool);
-        let mut source = source.clone();
-        let mut ctx: Context<T> = cfg.new_context()?;
-        let mut progress_counter = 0;
-        progress_sender
-            .send(ProgressStatus::FirstPass(FirstPassProgress {
-                frames_done: progress_counter,
-                frames_total: source.frame_count(),
-                segment_idx: progress.segment_idx,
-            }))
-            .unwrap();
-        loop {
-            let result = process_frame(&mut ctx, &mut source).unwrap();
-            match result {
-                ProcessFrameResult::NoPacket(false) => {}
-                _ => match ctx.rc_receive_pass_data() {
-                    Some(RcData::Frame(outbuf)) => {
-                        let len = outbuf.len() as u64;
-                        first_pass_data.extend_from_slice(&len.to_be_bytes());
-                        first_pass_data.extend_from_slice(&outbuf);
-                    }
-                    Some(RcData::Summary(outbuf)) => {
-                        // The last packet of rate control data we get is the summary data.
-                        // Let's put it at the start of the file.
-                        let mut tmp_data = Vec::new();
-                        let len = outbuf.len() as u64;
-                        tmp_data.extend_from_slice(&len.to_be_bytes());
-                        tmp_data.extend_from_slice(&outbuf);
-                        tmp_data.extend_from_slice(&first_pass_data);
-                        first_pass_data = tmp_data;
-                    }
-                    None => {}
-                },
-            }
-            match result {
-                ProcessFrameResult::Packet(_) => {
-                    progress_counter += 1;
-                    progress_sender
-                        .send(ProgressStatus::FirstPass(FirstPassProgress {
-                            frames_done: progress_counter,
-                            frames_total: source.frame_count(),
-                            segment_idx: progress.segment_idx,
-                        }))
-                        .unwrap();
-                }
-                ProcessFrameResult::EndOfSegment => {
-                    break;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let mut pass_data = Cursor::new(first_pass_data);
-    let cfg = build_encoder_config(
-        opts.speed,
-        opts.qp,
-        opts.max_bitrate,
-        video_info,
-        source.frame_count(),
-        if do_two_pass {
-            Some(&mut pass_data)
-        } else {
-            None
-        },
-    );
+    let cfg = build_encoder_config(opts.speed, opts.qp, video_info, pool);
 
     let mut ctx: Context<T> = cfg.new_context()?;
     let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
 
     let mut output = create_muxer(&segment_output_file).expect("Failed to create segment output");
     loop {
-        if do_two_pass {
-            while ctx.rc_second_pass_data_required() > 0 {
-                let mut buflen = [0u8; 8];
-                pass_data.read_exact(&mut buflen)?;
-
-                let mut data = vec![0u8; u64::from_be_bytes(buflen) as usize];
-                pass_data.read_exact(&mut data)?;
-
-                ctx.rc_send_pass_data(&data)?;
-            }
-        }
         match process_frame(&mut ctx, &mut source)? {
             ProcessFrameResult::Packet(packet) => {
                 output.write_frame(
@@ -276,13 +187,5 @@ pub enum ProgressStatus {
     Loading,
     Compressing(usize),
     Sending(ByteSize),
-    FirstPass(FirstPassProgress),
     Encoding(Box<ProgressInfo>),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct FirstPassProgress {
-    pub frames_done: usize,
-    pub frames_total: usize,
-    pub segment_idx: usize,
 }

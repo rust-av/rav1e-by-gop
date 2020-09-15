@@ -8,7 +8,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::cmp;
 use std::collections::VecDeque;
-use std::io::{Cursor, Read};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
@@ -32,6 +31,12 @@ pub fn start_workers(
     let thread_pool = ThreadPool::new(worker_threads);
     let slot_request_queue: Arc<Mutex<VecDeque<SlotQueueItem>>> =
         Arc::new(Mutex::new(VecDeque::new()));
+    let rayon_pool = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(worker_threads)
+            .build()
+            .unwrap(),
+    );
 
     // This thread watches the slot request receiver
     // for new slot requests
@@ -80,7 +85,9 @@ pub fn start_workers(
                 },
             ));
 
-            thread_pool.execute(move || wait_for_remote_data(connection, slot_request));
+            let rayon_handle = rayon_pool.clone();
+            thread_pool
+                .execute(move || wait_for_remote_data(connection, slot_request, rayon_handle));
         }
     });
 }
@@ -89,6 +96,7 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     mut connection: ConnectedSocket,
     encode_request: SlotRequestMessage,
     input: RawFrameData,
+    pool: Arc<rayon::ThreadPool>,
 ) {
     let connection_id = input.connection_id;
     if !input.compressed_frames.is_empty() {
@@ -96,76 +104,11 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
             compressed_frames: input.compressed_frames.into_iter().map(Rc::new).collect(),
             sent_count: 0,
         };
-
-        let opts = &encode_request.options;
-        let do_two_pass = opts.max_bitrate.is_some();
-
-        let mut first_pass_data = Vec::new();
-        if do_two_pass {
-            let cfg = build_first_pass_encoder_config(
-                opts.speed,
-                opts.qp,
-                opts.max_bitrate,
-                encode_request.video_info,
-                source.frame_count(),
-            );
-            let mut source = source.clone();
-            let mut ctx: Context<T> = match cfg.new_context() {
-                Ok(ctx) => ctx,
-                Err(e) => {
-                    error!(
-                        "Failed to create encode context for connection {}: {}",
-                        connection_id, e
-                    );
-                    let _ = connection.socket.write_message(Message::Binary(
-                        rmp_serde::to_vec(&EncoderMessage::<T>::EncodeFailed(e.to_string()))
-                            .unwrap(),
-                    ));
-                    let _ = connection.socket.close(None);
-                    return;
-                }
-            };
-            loop {
-                let result = process_frame(&mut ctx, &mut source).unwrap();
-                match result {
-                    ProcessFrameResult::NoPacket(false) => {}
-                    _ => match ctx.rc_receive_pass_data() {
-                        Some(RcData::Frame(outbuf)) => {
-                            let len = outbuf.len() as u64;
-                            first_pass_data.extend_from_slice(&len.to_be_bytes());
-                            first_pass_data.extend_from_slice(&outbuf);
-                        }
-                        Some(RcData::Summary(outbuf)) => {
-                            // The last packet of rate control data we get is the summary data.
-                            // Let's put it at the start of the file.
-                            let mut tmp_data = Vec::new();
-                            let len = outbuf.len() as u64;
-                            tmp_data.extend_from_slice(&len.to_be_bytes());
-                            tmp_data.extend_from_slice(&outbuf);
-                            tmp_data.extend_from_slice(&first_pass_data);
-                            first_pass_data = tmp_data;
-                        }
-                        None => {}
-                    },
-                }
-                if let ProcessFrameResult::EndOfSegment = result {
-                    break;
-                }
-            }
-        }
-
-        let mut pass_data = Cursor::new(first_pass_data);
         let cfg = build_encoder_config(
             encode_request.options.speed,
             encode_request.options.qp,
-            encode_request.options.max_bitrate,
             encode_request.video_info,
-            source.frame_count(),
-            if do_two_pass {
-                Some(&mut pass_data)
-            } else {
-                None
-            },
+            pool,
         );
 
         let mut ctx: Context<T> = match cfg.new_context() {
@@ -183,17 +126,6 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
             }
         };
         loop {
-            if do_two_pass {
-                while ctx.rc_second_pass_data_required() > 0 {
-                    let mut buflen = [0u8; 8];
-                    pass_data.read_exact(&mut buflen).unwrap();
-
-                    let mut data = vec![0u8; u64::from_be_bytes(buflen) as usize];
-                    pass_data.read_exact(&mut data).unwrap();
-
-                    ctx.rc_send_pass_data(&data).unwrap();
-                }
-            }
             match process_frame(&mut ctx, &mut source) {
                 Ok(ProcessFrameResult::Packet(packet)) => {
                     debug!(
@@ -248,7 +180,11 @@ pub fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     };
 }
 
-fn wait_for_remote_data(mut connection: ConnectedSocket, slot_request: SlotRequestMessage) {
+fn wait_for_remote_data(
+    mut connection: ConnectedSocket,
+    slot_request: SlotRequestMessage,
+    pool: Arc<rayon::ThreadPool>,
+) {
     loop {
         match connection.socket.read_message() {
             Ok(Message::Binary(data)) => {
@@ -260,9 +196,9 @@ fn wait_for_remote_data(mut connection: ConnectedSocket, slot_request: SlotReque
                         connection.id
                     );
                     if slot_request.video_info.bit_depth <= 8 {
-                        encode_segment::<u8>(connection, slot_request, input);
+                        encode_segment::<u8>(connection, slot_request, input, pool);
                     } else {
-                        encode_segment::<u16>(connection, slot_request, input);
+                        encode_segment::<u16>(connection, slot_request, input, pool);
                     }
                     return;
                 } else {
