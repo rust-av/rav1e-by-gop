@@ -424,6 +424,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
                             max_bitrate,
                         },
                         video_info,
+                        client_version: semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap(),
                     })
                     .unwrap(),
                 )) {

@@ -21,6 +21,14 @@ use tungstenite::Message;
 lazy_static! {
     static ref HASHED_SERVER_PASSWORD: String =
         hash(env::var("SERVER_PASSWORD").unwrap(), DEFAULT_COST).unwrap();
+    static ref CLIENT_VERSION_REQUIRED: semver::VersionReq = {
+        let server_version = semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap();
+        if server_version.major > 0 {
+            semver::VersionReq::parse(&format!("^{}.0.0", server_version.major)).unwrap()
+        } else {
+            semver::VersionReq::parse(&format!("~0.{}.0", server_version.minor)).unwrap()
+        }
+    };
 }
 
 pub fn start_listener(
@@ -127,6 +135,14 @@ fn initial_connection_listener(
                 // Check to see if this is a request message
                 if let Ok(message) = rmp_serde::from_read::<_, SlotRequestMessage>(data.as_slice())
                 {
+                    if !CLIENT_VERSION_REQUIRED.matches(&message.client_version) {
+                        warn!(
+                            "Incompatible client version {} attempted to connect",
+                            message.client_version
+                        );
+                        return;
+                    }
+
                     debug!("Received worker request from {}", connection.id);
                     slot_request_sender
                         .send(SlotQueueItem {

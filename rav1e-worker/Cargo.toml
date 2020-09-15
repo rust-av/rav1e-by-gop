@@ -1,6 +1,6 @@
 [package]
 name = "rav1e-worker"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["Josh Holmer <jholmer.in@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -25,6 +25,7 @@ num_cpus = "1"
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm", "serialize"] }
 rav1e-by-gop = { path = "../rav1e-by-gop", default-features = false }
 rmp-serde = "0.14"
+semver = "0.10"
 serde = { version = "1", features = ["derive"] }
 threadpool = "1"
 tungstenite = "0.11"

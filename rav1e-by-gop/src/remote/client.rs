@@ -12,10 +12,11 @@ pub const WORKER_QUERY_MESSAGE: &str = "handshake";
 ///
 /// This is needed to be a separate struct due to needing to know the pixel depth
 /// before receiving an encoder message.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlotRequestMessage {
     pub options: EncodeOptions,
     pub video_info: VideoDetails,
+    pub client_version: semver::Version,
 }
 
 /// Use this to send y4m frame data, loaded into the v_frame struct,
