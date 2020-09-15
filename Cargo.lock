@@ -69,18 +69,18 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
 name = "av-scenechange"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a0f00d55dac07eaa3e4ce9f9d366d2ecb241933a306b2ff473fb16aecd3b1e5"
+checksum = "6761f4f2b896c9b1d68cab988faacf02183ac31cafc768165c240d5619644b1c"
 dependencies = [
  "arrayvec",
  "libc",
- "nasm-rs 0.1.7",
+ "nasm-rs",
  "num-traits",
- "paste 0.1.18",
+ "paste",
  "serde",
  "v_frame",
- "y4m 0.5.3",
+ "y4m",
 ]
 
 [[package]]
@@ -577,12 +577,6 @@ dependencies = [
 
 [[package]]
 name = "nasm-rs"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea4fa2ba8f650120445ddcf137d8a6370ff01d55f00e6b29e0ab01b7c846464"
-
-[[package]]
-name = "nasm-rs"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a76f43faa0d13f9c89f72e1972446d558f003cfffb80eb16bb444231de1becd1"
@@ -711,28 +705,9 @@ dependencies = [
 
 [[package]]
 name = "paste"
-version = "0.1.18"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45ca20c77d80be666aef2b45486da86238fabe33e38306bd3118fe4af33fa880"
-dependencies = [
- "paste-impl",
- "proc-macro-hack",
-]
-
-[[package]]
-name = "paste"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6ddc8e145de01d9180ac7b78b9676f95a9c2447f6a88b2c2a04702211bc5d71"
-
-[[package]]
-name = "paste-impl"
-version = "0.1.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d95a7db200b97ef370c8e6de0088252f7e0dfff7d047a28528e47456c0fc98b6"
-dependencies = [
- "proc-macro-hack",
-]
+checksum = "0520af26d4cf99643dbbe093a61507922b57232d9978d8491fdc8f7b44573c8c"
 
 [[package]]
 name = "percent-encoding"
@@ -751,12 +726,6 @@ name = "ppv-lite86"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c36fa947111f5c62a733b652544dd0016a43ce89619538a8ef92724a6f501a20"
-
-[[package]]
-name = "proc-macro-hack"
-version = "0.5.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99c605b9a0adc77b7211c6b1f722dcb613d68d66859a44f3d485a6da332b0598"
 
 [[package]]
 name = "proc-macro2"
@@ -838,11 +807,11 @@ dependencies = [
  "itertools",
  "libc",
  "log",
- "nasm-rs 0.2.0",
+ "nasm-rs",
  "noop_proc_macro",
  "num-derive",
  "num-traits",
- "paste 1.0.0",
+ "paste",
  "rand",
  "rand_chacha",
  "rayon",
@@ -888,7 +857,7 @@ dependencies = [
  "url",
  "uuid",
  "v_frame",
- "y4m 0.7.0",
+ "y4m",
  "zstd",
 ]
 
@@ -1113,9 +1082,9 @@ checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
 
 [[package]]
 name = "syn"
-version = "1.0.40"
+version = "1.0.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "963f7d3cc59b59b9325165add223142bbf1df27655d07789f109896d353d8350"
+checksum = "6690e3e9f692504b941dc6c3b188fd28df054f7fb8469ab40680df52fdcc842b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1416,12 +1385,6 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
-
-[[package]]
-name = "y4m"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fe949ca02097f3652d75341496d47ea37b110f6e2c6e7be019e18bfce3163a4"
 
 [[package]]
 name = "y4m"
