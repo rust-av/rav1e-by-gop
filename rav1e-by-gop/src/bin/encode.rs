@@ -21,7 +21,7 @@ use serde::Serialize;
 use std::collections::BTreeSet;
 use std::fs::remove_file;
 use std::fs::File;
-use std::io::{BufWriter, Read};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
@@ -431,7 +431,7 @@ fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<()> {
 
     let mut pts = 0;
     for seg_filename in files {
-        let mut in_seg = File::open(seg_filename)?;
+        let mut in_seg = BufReader::new(File::open(seg_filename)?);
         loop {
             match ivf::read_packet(&mut in_seg) {
                 Ok(pkt) => {
@@ -445,6 +445,7 @@ fn mux_output_files(out_filename: &Path, num_segments: usize) -> Result<()> {
             }
         }
     }
+    out.flush()?;
 
     // Allow the progress indicator thread
     // enough time to output the end-of-encode stats

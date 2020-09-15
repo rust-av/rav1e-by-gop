@@ -192,6 +192,7 @@ pub(crate) fn remote_encode_segment<T: Pixel + DeserializeOwned + Default>(
                     }
                     EncoderMessage::SegmentFinished => {
                         debug!("Segment finished normally");
+                        output.flush().unwrap();
                         break;
                     }
                     EncoderMessage::EncodeFailed(e) => {

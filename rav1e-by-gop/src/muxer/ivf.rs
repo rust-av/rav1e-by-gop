@@ -14,7 +14,7 @@ use ivf::*;
 use rav1e::prelude::*;
 use std::fs::File;
 use std::io;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 
 pub struct IvfMuxer {
     output: Box<dyn Write>,
@@ -49,10 +49,7 @@ impl Muxer for IvfMuxer {
 impl IvfMuxer {
     pub fn open(path: &str) -> Result<Box<dyn Muxer>> {
         let ivf = IvfMuxer {
-            output: match path {
-                "-" => Box::new(std::io::stdout()),
-                f => Box::new(File::create(&f)?),
-            },
+            output: Box::new(BufWriter::new(File::create(path)?)),
         };
         Ok(Box::new(ivf))
     }
