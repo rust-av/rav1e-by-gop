@@ -75,7 +75,7 @@ checksum = "8a0f00d55dac07eaa3e4ce9f9d366d2ecb241933a306b2ff473fb16aecd3b1e5"
 dependencies = [
  "arrayvec",
  "libc",
- "nasm-rs 0.1.7",
+ "nasm-rs 0.1.8",
  "num-traits",
  "paste 0.1.18",
  "serde",
@@ -577,9 +577,9 @@ dependencies = [
 
 [[package]]
 name = "nasm-rs"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea4fa2ba8f650120445ddcf137d8a6370ff01d55f00e6b29e0ab01b7c846464"
+checksum = "d32e77172a32cfd76943af0c1c62a4d2dca70754d0c3b2ba7ba968289dc9b534"
 
 [[package]]
 name = "nasm-rs"
