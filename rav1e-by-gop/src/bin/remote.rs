@@ -6,11 +6,14 @@ use http::request::Request;
 use log::{debug, error, warn};
 use rav1e::prelude::Rational;
 use rav1e_by_gop::{
-    create_muxer, ActiveConnection, EncoderMessage, ProgressInfo, ProgressStatus, Slot, SlotStatus,
-    WorkerQueryResponse, WorkerStatusUpdate, WorkerUpdateChannel, WORKER_QUERY_MESSAGE,
+    create_memory_muxer, ActiveConnection, EncoderMessage, Muxer, ProgressInfo, ProgressStatus,
+    Slot, SlotStatus, WorkerQueryResponse, WorkerStatusUpdate, WorkerUpdateChannel,
+    WORKER_QUERY_MESSAGE,
 };
 use serde::de::DeserializeOwned;
 use std::collections::BTreeSet;
+use std::fs::File;
+use std::io::Write;
 use tungstenite::{connect, Error as WsError, Message};
 use url::Url;
 use v_frame::pixel::Pixel;
@@ -149,7 +152,7 @@ pub(crate) fn remote_encode_segment<T: Pixel + DeserializeOwned + Default>(
 ) {
     let encode_info = connection.encode_info.as_ref().unwrap();
     let video_info = &connection.video_info;
-    let mut output = create_muxer(&encode_info.output_file).unwrap();
+    let mut output = create_memory_muxer();
     let mut progress = ProgressInfo::new(
         Rational {
             num: video_info.time_base.den,
@@ -192,7 +195,8 @@ pub(crate) fn remote_encode_segment<T: Pixel + DeserializeOwned + Default>(
                     }
                     EncoderMessage::SegmentFinished => {
                         debug!("Segment finished normally");
-                        output.flush().unwrap();
+                        let mut output_file = File::create(&encode_info.output_file).unwrap();
+                        output_file.write_all(&output.buffer).unwrap();
                         break;
                     }
                     EncoderMessage::EncodeFailed(e) => {

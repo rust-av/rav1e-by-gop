@@ -3,14 +3,16 @@ pub mod stats;
 pub use self::stats::*;
 
 use super::VideoDetails;
-use crate::muxer::create_muxer;
-use crate::{build_encoder_config, decompress_frame, SegmentData};
+use crate::muxer::create_file_muxer;
+use crate::{build_encoder_config, create_memory_muxer, decompress_frame, Muxer, SegmentData};
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -95,7 +97,7 @@ fn do_encode<T: Pixel + DeserializeOwned>(
     let mut ctx: Context<T> = cfg.new_context()?;
     let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
 
-    let mut output = create_muxer(&segment_output_file).expect("Failed to create segment output");
+    let mut output = create_memory_muxer();
     loop {
         match process_frame(&mut ctx, &mut source)? {
             ProcessFrameResult::Packet(packet) => {
@@ -111,7 +113,9 @@ fn do_encode<T: Pixel + DeserializeOwned>(
                 // Next iteration
             }
             ProcessFrameResult::EndOfSegment => {
-                output.flush().unwrap();
+                let mut output_file =
+                    File::create(&segment_output_file).expect("Failed to create segment output");
+                output_file.write_all(&output.buffer).unwrap();
                 break;
             }
         };
