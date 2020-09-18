@@ -5,7 +5,7 @@ use crate::analyze::{
 };
 use crate::decide_thread_count;
 use crate::decode::*;
-use crate::muxer::create_file_muxer;
+use crate::muxer::create_muxer;
 use crate::progress::*;
 use crate::remote::{discover_remote_worker, remote_encode_segment, RemoteWorkerInfo};
 use crate::CliOptions;
@@ -240,7 +240,7 @@ pub fn perform_encode_inner<
     }
 
     // Write only the ivf header
-    create_file_muxer(&get_segment_output_filename(&opts.output, 0))
+    create_muxer(&get_segment_output_filename(&opts.output, 0))
         .map(|mut output| {
             output.write_header(
                 video_info.width,

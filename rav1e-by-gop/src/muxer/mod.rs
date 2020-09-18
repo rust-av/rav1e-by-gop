@@ -10,7 +10,6 @@
 mod ivf;
 
 use self::ivf::IvfMuxer;
-use crate::muxer::ivf::IvfInMemoryMuxer;
 use anyhow::Result;
 use rav1e::prelude::*;
 use std::ffi::OsStr;
@@ -31,7 +30,7 @@ pub trait Muxer {
     fn flush(&mut self) -> io::Result<()>;
 }
 
-pub fn create_file_muxer(path: &Path) -> Result<Box<dyn Muxer>> {
+pub fn create_muxer(path: &Path) -> Result<Box<dyn Muxer>> {
     let ext = path
         .extension()
         .and_then(OsStr::to_str)
@@ -39,9 +38,7 @@ pub fn create_file_muxer(path: &Path) -> Result<Box<dyn Muxer>> {
         .unwrap_or_else(|| "ivf".into());
 
     match &ext[..] {
-        "ivf" => {
-            IvfMuxer::open(path.to_str().unwrap()).map(|muxer| Box::new(muxer) as Box<dyn Muxer>)
-        }
+        "ivf" => IvfMuxer::open(path.to_str().unwrap()),
         _e => {
             panic!(
                 "{} is not a supported extension, please change to .ivf",
@@ -49,8 +46,4 @@ pub fn create_file_muxer(path: &Path) -> Result<Box<dyn Muxer>> {
             );
         }
     }
-}
-
-pub fn create_memory_muxer() -> IvfInMemoryMuxer {
-    IvfInMemoryMuxer::default()
 }

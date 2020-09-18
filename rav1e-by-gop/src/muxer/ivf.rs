@@ -47,41 +47,10 @@ impl Muxer for IvfMuxer {
 }
 
 impl IvfMuxer {
-    pub fn open(path: &str) -> Result<IvfMuxer> {
+    pub fn open(path: &str) -> Result<Box<dyn Muxer>> {
         let ivf = IvfMuxer {
             output: Box::new(BufWriter::new(File::create(path)?)),
         };
-        Ok(ivf)
-    }
-}
-
-#[derive(Default)]
-pub struct IvfInMemoryMuxer {
-    pub buffer: Vec<u8>,
-}
-
-impl Muxer for IvfInMemoryMuxer {
-    fn write_header(
-        &mut self,
-        width: usize,
-        height: usize,
-        framerate_num: usize,
-        framerate_den: usize,
-    ) {
-        write_ivf_header(
-            &mut self.buffer,
-            width,
-            height,
-            framerate_num,
-            framerate_den,
-        );
-    }
-
-    fn write_frame(&mut self, pts: u64, data: &[u8], _frame_type: FrameType) {
-        write_ivf_frame(&mut self.buffer, pts, data);
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.buffer.flush()
+        Ok(Box::new(ivf))
     }
 }
