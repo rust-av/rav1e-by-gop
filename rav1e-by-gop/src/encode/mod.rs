@@ -3,6 +3,7 @@ pub mod stats;
 pub use self::stats::*;
 
 use super::VideoDetails;
+use crate::muxer::create_file_muxer;
 use crate::{build_encoder_config, create_memory_muxer, decompress_frame, Muxer, SegmentData};
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
