@@ -15,6 +15,10 @@ mod server;
 mod streams;
 mod worker;
 
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 fn main() {
     env::var("SERVER_PASSWORD").expect("SERVER_PASSWORD env var MUST be set!");
 

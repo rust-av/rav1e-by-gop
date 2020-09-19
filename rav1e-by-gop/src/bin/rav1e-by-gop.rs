@@ -26,6 +26,10 @@ use std::str::FromStr;
 use std::{env, fmt};
 use systemstat::{ByteSize, Platform, System};
 
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 fn main() -> Result<()> {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "rav1e_by_gop=info");
