@@ -4,15 +4,18 @@ pub use self::stats::*;
 
 use super::VideoDetails;
 use crate::muxer::create_muxer;
-use crate::{build_encoder_config, decompress_frame, SegmentData};
+use crate::{build_encoder_config, decompress_frame, SegmentData, SegmentFrameData};
 use anyhow::Result;
+use byteorder::{LittleEndian, ReadBytesExt};
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::fs;
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 use systemstat::data::ByteSize;
 use threadpool::ThreadPool;
@@ -37,7 +40,10 @@ pub fn encode_segment(
             num: video_info.time_base.den,
             den: video_info.time_base.num,
         },
-        data.compressed_frames.len(),
+        match data.frame_data {
+            SegmentFrameData::Y4MFile { frame_count, .. } => frame_count,
+            SegmentFrameData::CompressedFrames(ref frames) => frames.len(),
+        },
         {
             let mut kf = BTreeSet::new();
             kf.insert(data.start_frameno);
@@ -51,7 +57,20 @@ pub fn encode_segment(
 
     thread_pool.execute(move || {
         let source = Source {
-            compressed_frames: data.compressed_frames.into_iter().map(Rc::new).collect(),
+            frame_data: match data.frame_data {
+                SegmentFrameData::Y4MFile { path, frame_count } => SourceFrameData::Y4MFile {
+                    frame_count,
+                    video_info,
+                    input: {
+                        let file = File::open(&path).unwrap();
+                        BufReader::new(file)
+                    },
+                    path,
+                },
+                SegmentFrameData::CompressedFrames(frames) => {
+                    SourceFrameData::CompressedFrames(frames)
+                }
+            },
             sent_count: 0,
         };
         if video_info.bit_depth > 8 {
@@ -116,33 +135,56 @@ fn do_encode<T: Pixel + DeserializeOwned>(
             }
         };
     }
+    if let SourceFrameData::Y4MFile { path, .. } = source.frame_data {
+        fs::remove_file(&path).unwrap();
+    }
 
     Ok(progress)
 }
 
-#[derive(Clone)]
+pub enum SourceFrameData {
+    CompressedFrames(Vec<Vec<u8>>),
+    Y4MFile {
+        path: PathBuf,
+        input: BufReader<File>,
+        frame_count: usize,
+        video_info: VideoDetails,
+    },
+}
+
 pub struct Source {
     pub sent_count: usize,
-    pub compressed_frames: Vec<Rc<Vec<u8>>>,
+    pub frame_data: SourceFrameData,
 }
 
 impl Source {
     fn read_frame<T: Pixel + DeserializeOwned>(&mut self, ctx: &mut Context<T>) {
-        if self.sent_count == self.compressed_frames.len() {
+        if self.sent_count == self.frame_count() {
             ctx.flush();
             return;
         }
 
-        let _ = ctx.send_frame(Some(Arc::new(decompress_frame(
-            &self.compressed_frames[self.sent_count],
-        ))));
-        // Deallocate the compressed frame from memory, we no longer need it
-        self.compressed_frames[self.sent_count] = Rc::new(Vec::new());
+        match self.frame_data {
+            SourceFrameData::CompressedFrames(ref mut frames) => {
+                let _ = ctx.send_frame(Some(Arc::new(decompress_frame(&frames[self.sent_count]))));
+                // Deallocate the compressed frame from memory, we no longer need it
+                frames[self.sent_count] = Vec::new();
+            }
+            SourceFrameData::Y4MFile { ref mut input, .. } => {
+                let bytes = input.read_u32::<LittleEndian>().unwrap() as usize;
+                let mut data = vec![0; bytes];
+                input.read_exact(&mut data).unwrap();
+                let _ = ctx.send_frame(Some(Arc::new(bincode::deserialize(&data).unwrap())));
+            }
+        };
         self.sent_count += 1;
     }
 
     pub fn frame_count(&self) -> usize {
-        self.compressed_frames.len()
+        match self.frame_data {
+            SourceFrameData::CompressedFrames(ref frames) => frames.len(),
+            SourceFrameData::Y4MFile { frame_count, .. } => frame_count,
+        }
     }
 }
 

@@ -1,9 +1,10 @@
 use crate::compress_frame;
 use crate::decode::{get_video_details, process_raw_frame, read_raw_frame, DecodeError};
-use crate::progress::get_segment_output_filename;
+use crate::progress::{get_segment_input_filename, get_segment_output_filename};
 use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
 use crate::CliOptions;
 use av_scenechange::{DetectionOptions, SceneChangeDetector};
+use byteorder::{LittleEndian, WriteBytesExt};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossbeam_utils::thread::Scope;
 use http::request::Request;
@@ -14,7 +15,8 @@ use rav1e_by_gop::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Read;
+use std::fs::File;
+use std::io::{BufWriter, Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
@@ -124,7 +126,8 @@ pub(crate) fn run_first_pass<
                 .send(ProgressStatus::Loading)
                 .unwrap();
 
-                let mut processed_frames: Vec<Vec<u8>>;
+                let mut processed_frames: Vec<Vec<u8>> = Vec::new();
+                let mut frame_count = 0;
                 loop {
                     if let Some(next_keyframe) = next_known_keyframe {
                         start_frameno = lookahead_frameno;
@@ -154,22 +157,56 @@ pub(crate) fn run_first_pass<
                         } else {
                             processed_frames =
                                 Vec::with_capacity(next_keyframe - lookahead_frameno);
-                            while lookahead_frameno < next_keyframe {
-                                match read_raw_frame(&mut dec) {
-                                    Ok(frame) => {
-                                        processed_frames.push(compress_frame::<T>(
-                                            &process_raw_frame(frame, &ctx, &cfg),
-                                        ));
-                                        lookahead_frameno += 1;
+                            frame_count = 0;
+
+                            if opts.temp_input && !message.is_remote() {
+                                let file = File::create(get_segment_input_filename(
+                                    &opts.output,
+                                    segment_no + 1,
+                                ))
+                                .unwrap();
+                                let mut writer = BufWriter::new(file);
+                                while lookahead_frameno < next_keyframe {
+                                    match read_raw_frame(&mut dec) {
+                                        Ok(frame) => {
+                                            frame_count += 1;
+                                            let frame_data = bincode::serialize(
+                                                &process_raw_frame(&frame, &ctx, &cfg),
+                                            )
+                                            .unwrap();
+                                            writer
+                                                .write_u32::<LittleEndian>(frame_data.len() as u32)
+                                                .unwrap();
+                                            writer.write_all(&frame_data).unwrap();
+                                            lookahead_frameno += 1;
+                                        }
+                                        Err(DecodeError::EOF) => {
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            error!("Decode error: {}", e);
+                                            return;
+                                        }
                                     }
-                                    Err(DecodeError::EOF) => {
-                                        break;
+                                }
+                            } else {
+                                while lookahead_frameno < next_keyframe {
+                                    match read_raw_frame(&mut dec) {
+                                        Ok(frame) => {
+                                            processed_frames.push(compress_frame::<T>(
+                                                &process_raw_frame(&frame, &ctx, &cfg),
+                                            ));
+                                            lookahead_frameno += 1;
+                                        }
+                                        Err(DecodeError::EOF) => {
+                                            break;
+                                        }
+                                        Err(e) => {
+                                            error!("Decode error: {}", e);
+                                            return;
+                                        }
                                     }
-                                    Err(e) => {
-                                        error!("Decode error: {}", e);
-                                        return;
-                                    }
-                                };
+                                }
                             }
                         }
                     } else {
@@ -183,7 +220,7 @@ pub(crate) fn run_first_pass<
                                     Ok(frame) => {
                                         lookahead_queue.insert(
                                             lookahead_frameno,
-                                            process_raw_frame(frame, &ctx, &cfg),
+                                            process_raw_frame(&frame, &ctx, &cfg),
                                         );
                                         lookahead_frameno += 1;
                                     }
@@ -256,7 +293,7 @@ pub(crate) fn run_first_pass<
                             }
                         }
 
-                        // The frames comprising the segment are known, so set them in `processed_frames`
+                        // The frames comprising the segment are known
                         let interval: (usize, usize) = keyframes
                             .iter()
                             .rev()
@@ -266,10 +303,31 @@ pub(crate) fn run_first_pass<
                             .collect_tuple()
                             .unwrap();
                         let interval_len = interval.1 - interval.0;
-                        processed_frames = Vec::with_capacity(interval_len);
-                        for frameno in (interval.0)..(interval.1) {
-                            processed_frames
-                                .push(compress_frame(&lookahead_queue.remove(&frameno).unwrap()));
+                        if opts.temp_input && !message.is_remote() {
+                            let file = File::create(get_segment_input_filename(
+                                &opts.output,
+                                segment_no + 1,
+                            ))
+                            .unwrap();
+                            let mut writer = BufWriter::new(file);
+                            frame_count = 0;
+                            for frameno in (interval.0)..(interval.1) {
+                                frame_count += 1;
+                                let frame_data =
+                                    bincode::serialize(&lookahead_queue.remove(&frameno).unwrap())
+                                        .unwrap();
+                                writer
+                                    .write_u32::<LittleEndian>(frame_data.len() as u32)
+                                    .unwrap();
+                                writer.write_all(&frame_data).unwrap();
+                            }
+                        } else {
+                            processed_frames = Vec::with_capacity(interval_len);
+                            for frameno in (interval.0)..(interval.1) {
+                                processed_frames.push(compress_frame(
+                                    &lookahead_queue.remove(&frameno).unwrap(),
+                                ));
+                            }
                         }
                     }
                     break;
@@ -284,7 +342,17 @@ pub(crate) fn run_first_pass<
                                 slot,
                                 next_analysis_frame: analysis_frameno - 1,
                                 start_frameno,
-                                compressed_frames: processed_frames,
+                                frame_data: if opts.temp_input {
+                                    SegmentFrameData::Y4MFile {
+                                        frame_count,
+                                        path: get_segment_input_filename(
+                                            &opts.output,
+                                            segment_no + 1,
+                                        ),
+                                    }
+                                } else {
+                                    SegmentFrameData::CompressedFrames(processed_frames)
+                                },
                             }))
                             .unwrap();
                     }
@@ -293,9 +361,10 @@ pub(crate) fn run_first_pass<
                         let output = opts.output.clone();
                         let remote_sender = remote_sender.clone();
                         scope.spawn(move |_| {
+                            let frame_count = processed_frames.len();
                             let raw_data = RawFrameData {
                                 connection_id: connection.connection_id.unwrap(),
-                                compressed_frames: processed_frames.clone(),
+                                compressed_frames: processed_frames,
                             };
 
                             connection
@@ -327,7 +396,7 @@ pub(crate) fn run_first_pass<
                                 .unwrap();
                             connection.encode_info = Some(EncodeInfo {
                                 output_file: get_segment_output_filename(&output, segment_no + 1),
-                                frame_count: processed_frames.len(),
+                                frame_count,
                                 next_analysis_frame: analysis_frameno - 1,
                                 segment_idx: segment_no + 1,
                                 start_frameno,

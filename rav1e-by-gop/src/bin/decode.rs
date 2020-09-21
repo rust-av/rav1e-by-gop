@@ -56,7 +56,7 @@ pub(crate) fn read_raw_frame<'d, R: Read>(
 }
 
 pub(crate) fn process_raw_frame<T: Pixel>(
-    frame: y4m::Frame,
+    frame: &y4m::Frame,
     ctx: &Context<T>,
     cfg: &VideoDetails,
 ) -> Frame<T> {

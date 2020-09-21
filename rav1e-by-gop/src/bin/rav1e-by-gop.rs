@@ -142,6 +142,9 @@ fn main() -> Result<()> {
                 .help("Disable local encoding threads--requires distributed workers")
                 .long("no-local"),
         )
+        .arg(Arg::with_name("INPUT_TEMP_FILES")
+            .help("Write y4m input segments to temporary files instead of keeping them in memory. Reduces memory usage but increases disk usage. Should enable more segments to run simultaneously.")
+            .long("tmp-input"))
         .get_matches();
     let opts = CliOptions::from(&matches);
     ensure!(
@@ -189,6 +192,7 @@ pub struct CliOptions {
     display_progress: bool,
     workers: Vec<WorkerConfig>,
     use_local: bool,
+    temp_input: bool,
 }
 
 impl From<&ArgMatches<'_>> for CliOptions {
@@ -240,6 +244,7 @@ impl From<&ArgMatches<'_>> for CliOptions {
                 }
             },
             use_local: !matches.is_present("NO_LOCAL"),
+            temp_input: matches.is_present("INPUT_TEMP_FILES"),
         }
     }
 }
@@ -342,7 +347,9 @@ fn decide_thread_count(
         // and will be uncompressed in memory.
         // The remainder of frames will have only basic YUV data loaded,
         // and will be compressed in memory.
-        let bytes_per_segment = if opts.max_keyint <= rdo_lookahead_frames {
+        let bytes_per_segment = if opts.temp_input {
+            bytes_per_frame * rdo_lookahead_frames * 9
+        } else if opts.max_keyint <= rdo_lookahead_frames {
             bytes_per_frame * opts.max_keyint * 6
         } else {
             (bytes_per_frame * rdo_lookahead_frames * 9)

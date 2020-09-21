@@ -23,6 +23,11 @@ pub fn update_progress_file(output: &Path, progress: &ProgressInfo) {
         .expect("Failed to write to progress file");
 }
 
+pub fn get_segment_input_filename(output: &Path, segment_idx: usize) -> PathBuf {
+    // We're making a "pseudo y4m" file that is actually `Frame<T>` data.
+    output.with_extension(&format!("part{}.py4m", segment_idx))
+}
+
 pub fn get_segment_output_filename(output: &Path, segment_idx: usize) -> PathBuf {
     output.with_extension(&format!("part{}.ivf", segment_idx))
 }

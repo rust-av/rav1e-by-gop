@@ -46,12 +46,26 @@ pub enum Slot {
     Remote(Box<ActiveConnection>),
 }
 
+impl Slot {
+    pub fn is_remote(&self) -> bool {
+        match self {
+            Slot::Local(_) => false,
+            Slot::Remote(_) => true,
+        }
+    }
+}
+
 pub struct SegmentData {
     pub segment_no: usize,
     pub slot: usize,
     pub next_analysis_frame: usize,
     pub start_frameno: usize,
-    pub compressed_frames: Vec<Vec<u8>>,
+    pub frame_data: SegmentFrameData,
+}
+
+pub enum SegmentFrameData {
+    CompressedFrames(Vec<Vec<u8>>),
+    Y4MFile { path: PathBuf, frame_count: usize },
 }
 
 pub struct ActiveConnection {
