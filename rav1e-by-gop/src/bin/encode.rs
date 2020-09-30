@@ -166,7 +166,7 @@ pub fn perform_encode_inner<
             // letting rayon schedule the workload seems to deal with starvation
             // reserve 1 thread for 4 parallel tiles
 
-            num_threads - opts.tiles * 2 / 8
+            (num_threads - opts.tiles * 2 / 8).max(1)
         });
         info!(
             "Using {} encoder threads ({} local workers)",
