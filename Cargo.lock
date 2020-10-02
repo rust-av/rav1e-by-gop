@@ -26,6 +26,12 @@ checksum = "6b602bfe940d21c130f3895acd65221e8a61270debe89d628b9cb4e3ccb8569b"
 
 [[package]]
 name = "arbitrary"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "491d5e42b1a073ff1fc1e0a02744b3f8bee9cf4bfd552053cac36c64b879795d"
+
+[[package]]
+name = "arbitrary"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0922a3e746b5a44e111e5603feb6704e5cc959116f66737f50bb5cbd264e9d87"
@@ -124,6 +130,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "614aa3f2bac03707e62a84d18a48dd3d9ea6171313fd5e6a53b5054d8ae74601"
 
 [[package]]
+name = "bitstream-io"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71b66dc4e6b6d83f3afd41eb3006cd332a60d4e18496a31f2caa4069914d773f"
+
+[[package]]
 name = "block-buffer"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -214,9 +226,9 @@ checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 
 [[package]]
 name = "chrono"
-version = "0.4.18"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d021fddb7bd3e734370acfa4a83f34095571d8570c039f1420d77540f68d5772"
+checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
 dependencies = [
  "libc",
  "num-integer",
@@ -565,7 +577,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "013a5c8cef81555cae61868d291947e2b5f4ecb6f13fc537cc5b611af370d2f1"
 dependencies = [
- "bitstream-io",
+ "bitstream-io 0.8.5",
 ]
 
 [[package]]
@@ -606,9 +618,19 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.77"
+version = "0.2.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2f96b10ec2560088a8e76961b00d47107b3a625fecb76dedb29ee7ccbf98235"
+checksum = "aa7087f49d294270db4e1928fc110c976cd4b9e5a16348e0a1df09afa99e6c98"
+
+[[package]]
+name = "libfuzzer-sys"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e969cd2be7a2aae0acbbe205da49134148db2287fb45a811bf441ed72f09a35"
+dependencies = [
+ "arbitrary 0.3.3",
+ "cc",
+]
 
 [[package]]
 name = "log"
@@ -864,9 +886,9 @@ checksum = "c36fa947111f5c62a733b652544dd0016a43ce89619538a8ef92724a6f501a20"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.23"
+version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51ef7cd2518ead700af67bf9d1a658d90b6037d77110fd9c0445429d0ba1c6c9"
+checksum = "1e0704ee1a7e00d7bb417d0770ea303c1bccbabf0ef1667dae92b5967f5f8a71"
 dependencies = [
  "unicode-xid",
 ]
@@ -929,18 +951,19 @@ dependencies = [
 
 [[package]]
 name = "rav1e"
-version = "0.3.0"
-source = "git+https://github.com/xiph/rav1e#92074b3ab5a9e82e5df51b7b1a12368b29280bcf"
+version = "0.4.0-alpha"
+source = "git+https://github.com/xiph/rav1e#115f6e19ca5594b8fb31fec0ae5f0a3414888dc5"
 dependencies = [
- "arbitrary",
+ "arbitrary 0.4.6",
  "arg_enum_proc_macro",
  "arrayvec",
- "bitstream-io",
+ "bitstream-io 0.9.0",
  "cc",
  "cfg-if",
  "interpolate_name",
  "itertools",
  "libc",
+ "libfuzzer-sys",
  "log",
  "nasm-rs",
  "noop_proc_macro",
@@ -1033,9 +1056,9 @@ dependencies = [
 
 [[package]]
 name = "rayon"
-version = "1.4.0"
+version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfd016f0c045ad38b5251be2c9c0ab806917f82da4d36b2a327e5166adad9270"
+checksum = "dcf6960dc9a5b4ee8d3e4c5787b4a112a8818e0290a42ff664ad60692fdf2032"
 dependencies = [
  "autocfg",
  "crossbeam-deque",
@@ -1486,7 +1509,7 @@ dependencies = [
 [[package]]
 name = "v_frame"
 version = "0.1.0"
-source = "git+https://github.com/xiph/rav1e#92074b3ab5a9e82e5df51b7b1a12368b29280bcf"
+source = "git+https://github.com/xiph/rav1e#115f6e19ca5594b8fb31fec0ae5f0a3414888dc5"
 dependencies = [
  "cfg-if",
  "noop_proc_macro",
@@ -1510,7 +1533,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#92074b3ab5a9e82e5df51b7b1a12368b29280bcf"
+source = "git+https://github.com/xiph/rav1e#115f6e19ca5594b8fb31fec0ae5f0a3414888dc5"
 dependencies = [
  "bitflags",
  "chrono",
