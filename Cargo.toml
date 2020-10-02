@@ -6,6 +6,7 @@ opt-level = 1
 
 [profile.release]
 lto = "thin"
+codegen-units = 1
 
 # Temporary workaround until rav1e 0.3.2 is released with v_frame support
 [patch.crates-io]
