@@ -10,6 +10,7 @@ use crossbeam_utils::thread::Scope;
 use http::request::Request;
 use itertools::Itertools;
 use log::{debug, error};
+use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
 use serde::de::DeserializeOwned;
@@ -17,7 +18,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use systemstat::ByteSize;
@@ -272,7 +273,7 @@ pub(crate) fn run_first_pass<
                                 input_finished_sender.send(()).unwrap();
                                 match message {
                                     Slot::Local(slot) => {
-                                        pool_handle.lock().unwrap()[slot] = false;
+                                        pool_handle.lock()[slot] = false;
                                         progress_senders[slot].send(ProgressStatus::Idle).unwrap();
                                     }
                                     Slot::Remote(connection) => {
@@ -429,7 +430,7 @@ pub(crate) fn run_first_pass<
     while let Ok(message) = slot_ready_channel.1.try_recv() {
         match message {
             Slot::Local(slot) => {
-                slot_pool.lock().unwrap()[slot] = false;
+                slot_pool.lock()[slot] = false;
             }
             Slot::Remote(connection) => {
                 connection
@@ -464,7 +465,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
         sleep(Duration::from_millis(500));
 
         {
-            let mut pool_lock = pool.lock().unwrap();
+            let mut pool_lock = pool.lock();
             if let Some(slot) = pool_lock.iter().position(|slot| !*slot) {
                 if slot_ready_sender.send(Slot::Local(slot)).is_err() {
                     debug!("Exiting slot checker loop");
@@ -476,7 +477,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
         }
 
         let mut worker_start_idx = 0;
-        for worker in remote_pool.lock().unwrap().iter_mut() {
+        for worker in remote_pool.lock().iter_mut() {
             if worker.workers.iter().all(|worker| *worker) {
                 worker_start_idx += worker.workers.len();
                 continue;

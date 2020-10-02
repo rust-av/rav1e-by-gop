@@ -2,13 +2,14 @@ use crate::channels::SlotRequestReceiver;
 use crate::ConnectedSocket;
 use crossbeam_utils::thread::Scope;
 use log::{debug, error, info, warn};
+use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::cmp;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use threadpool::ThreadPool;
@@ -42,7 +43,7 @@ pub fn start_workers(
     let slot_request_queue_handle = slot_request_queue.clone();
     scope.spawn(move |_| {
         while let Ok(message) = slot_request_receiver.recv() {
-            slot_request_queue_handle.lock().unwrap().push_back(message);
+            slot_request_queue_handle.lock().push_back(message);
         }
     });
 
@@ -58,7 +59,7 @@ pub fn start_workers(
             continue;
         }
 
-        let mut queue = slot_request_queue_handle.lock().unwrap();
+        let mut queue = slot_request_queue_handle.lock();
         let total_items = queue.len();
         let ready_items = queue
             .drain(0..cmp::min(total_items, total_workers - active_workers))

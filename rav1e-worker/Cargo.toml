@@ -22,6 +22,7 @@ lazy_static = "1.4.0"
 log = "0.4"
 native-tls = "0.2"
 num_cpus = "1"
+parking_lot = "0.11"
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm", "serialize"] }
 rav1e-by-gop = { path = "../rav1e-by-gop", default-features = false }
 rayon = "1.3"

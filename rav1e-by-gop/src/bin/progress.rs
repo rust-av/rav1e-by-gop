@@ -5,11 +5,12 @@ use console::Term;
 use console::{style, StyledObject};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use log::{debug, error, trace};
+use parking_lot::Mutex;
 use rav1e_by_gop::*;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use std::{cmp, thread};
 
@@ -102,7 +103,7 @@ pub(crate) fn watch_progress_receivers(
     display_progress: bool,
     max_frames: Option<u64>,
 ) {
-    let slots_count = slots.lock().unwrap().len();
+    let slots_count = slots.lock().len();
     let segments_pb_holder = MultiProgress::new();
     if !display_progress {
         segments_pb_holder.set_draw_target(ProgressDrawTarget::hidden());
@@ -150,10 +151,9 @@ pub(crate) fn watch_progress_receivers(
             input_finished = true;
         }
         if input_finished
-            && slots.lock().unwrap().iter().all(|&slot| !slot)
+            && slots.lock().iter().all(|&slot| !slot)
             && remote_slots
                 .lock()
-                .unwrap()
                 .iter()
                 .all(|slot| slot.workers.iter().all(|worker| !worker))
         {
@@ -216,7 +216,7 @@ fn update_progress(
                 overall_progress.encoding_stats.0 += &progress.encoding_stats.0;
                 overall_progress.encoding_stats.1 += &progress.encoding_stats.1;
                 if !remote {
-                    slots.lock().unwrap()[slot_idx] = false;
+                    slots.lock()[slot_idx] = false;
                 }
 
                 pb.set_message("");

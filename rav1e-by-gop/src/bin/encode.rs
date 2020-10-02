@@ -14,6 +14,7 @@ use console::style;
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
 use crossbeam_utils::thread::{scope, Scope};
 use log::{debug, error, info};
+use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
 use serde::de::DeserializeOwned;
@@ -23,7 +24,7 @@ use std::fs::remove_file;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{cmp, thread};
@@ -232,7 +233,7 @@ pub fn perform_encode_inner<
         );
     });
 
-    for worker in remote_slots.lock().unwrap().iter() {
+    for worker in remote_slots.lock().iter() {
         let receiver = worker.update_channel.1.clone();
         let remote_slots_ref = remote_slots.clone();
         let input_finished_receiver = input_finished_channel.1.clone();
@@ -302,7 +303,7 @@ fn watch_worker_updates(
         if !done && input_finished_receiver.is_full() {
             debug!("Worker update thread knows input is done");
             done = true;
-            let remote_slots_ref = remote_slots.lock().unwrap();
+            let remote_slots_ref = remote_slots.lock();
             if remote_slots_ref
                 .iter()
                 .find(|worker| worker.update_channel.1.same_channel(&update_receiver))
@@ -320,7 +321,7 @@ fn watch_worker_updates(
 
         if let Ok(message) = update_receiver.try_recv() {
             debug!("Updating worker status: {:?}", message);
-            let mut remote_slots_ref = remote_slots.lock().unwrap();
+            let mut remote_slots_ref = remote_slots.lock();
             let worker = remote_slots_ref
                 .iter_mut()
                 .find(|worker| worker.update_channel.1.same_channel(&update_receiver))
@@ -415,7 +416,6 @@ fn listen_for_remote_workers(
         if input_finished_receiver.is_full()
             && remote_slots
                 .lock()
-                .unwrap()
                 .iter()
                 .map(|slot| slot.workers.iter())
                 .flatten()
