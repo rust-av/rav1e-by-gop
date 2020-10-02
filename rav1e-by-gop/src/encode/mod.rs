@@ -4,7 +4,7 @@ pub use self::stats::*;
 
 use super::VideoDetails;
 use crate::muxer::create_muxer;
-use crate::{build_encoder_config, decompress_frame, SegmentData, SegmentFrameData};
+use crate::{build_encoder_config, decompress_frame, Output, SegmentData, SegmentFrameData};
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
 use crossbeam_channel::{Receiver, Sender};
@@ -33,7 +33,7 @@ pub fn encode_segment(
     thread_pool: &mut ThreadPool,
     rayon_pool: Arc<rayon::ThreadPool>,
     progress_sender: ProgressSender,
-    segment_output_file: PathBuf,
+    segment_output_file: Output,
 ) -> Result<()> {
     let progress = ProgressInfo::new(
         Rational {
@@ -79,7 +79,7 @@ pub fn encode_segment(
                 opts,
                 video_info,
                 source,
-                segment_output_file,
+                &segment_output_file,
                 progress,
                 progress_sender,
             )
@@ -90,7 +90,7 @@ pub fn encode_segment(
                 opts,
                 video_info,
                 source,
-                segment_output_file,
+                &segment_output_file,
                 progress,
                 progress_sender,
             )
@@ -105,7 +105,7 @@ fn do_encode<T: Pixel + DeserializeOwned>(
     opts: EncodeOptions,
     video_info: VideoDetails,
     mut source: Source,
-    segment_output_file: PathBuf,
+    segment_output_file: &Output,
     mut progress: ProgressInfo,
     progress_sender: ProgressSender,
 ) -> Result<ProgressInfo> {

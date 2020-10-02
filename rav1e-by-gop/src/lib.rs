@@ -80,7 +80,7 @@ pub struct ActiveConnection {
 
 #[derive(Debug, Clone)]
 pub struct EncodeInfo {
-    pub output_file: PathBuf,
+    pub output_file: Output,
     pub frame_count: usize,
     pub next_analysis_frame: usize,
     pub segment_idx: usize,
@@ -133,4 +133,10 @@ pub fn build_base_encoder_config(
     enc_config.max_key_frame_interval = u16::max_value() as u64;
     enc_config.speed_settings.no_scene_detection = true;
     enc_config
+}
+
+#[derive(Debug, Clone)]
+pub enum Output {
+    File(PathBuf),
+    Null,
 }

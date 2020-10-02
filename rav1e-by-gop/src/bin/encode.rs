@@ -3,12 +3,12 @@ use crate::analyze::{
     run_first_pass, AnalyzerChannel, AnalyzerReceiver, InputFinishedChannel, InputFinishedReceiver,
     RemoteAnalyzerChannel, RemoteAnalyzerReceiver,
 };
-use crate::decide_thread_count;
 use crate::decode::*;
 use crate::muxer::create_muxer;
 use crate::progress::*;
 use crate::remote::{discover_remote_worker, remote_encode_segment, RemoteWorkerInfo};
 use crate::CliOptions;
+use crate::{decide_thread_count, Output};
 use anyhow::{bail, Result};
 use console::style;
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
@@ -166,7 +166,7 @@ pub fn perform_encode_inner<
     let slots: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![false; num_threads]));
     let remote_slots = Arc::new(Mutex::new(remote_workers));
 
-    let output_file = opts.output.to_owned();
+    let output_file = opts.output.clone();
     let verbose = opts.verbose;
     let start_frameno = overall_progress.next_analysis_frame;
     let known_keyframes = overall_progress.keyframes.clone();
@@ -240,16 +240,19 @@ pub fn perform_encode_inner<
     }
 
     // Write only the ivf header
-    create_muxer(&get_segment_output_filename(&opts.output, 0))
-        .map(|mut output| {
-            output.write_header(
-                video_info.width,
-                video_info.height,
-                video_info.time_base.den as usize,
-                video_info.time_base.num as usize,
-            );
-        })
-        .expect("Failed to create segment output");
+    create_muxer(&match &opts.output {
+        Output::File(output_file) => Output::File(get_segment_output_filename(&output_file, 0)),
+        Output::Null => Output::Null,
+    })
+    .map(|mut output| {
+        output.write_header(
+            video_info.width,
+            video_info.height,
+            video_info.time_base.den as usize,
+            video_info.time_base.num as usize,
+        );
+    })
+    .expect("Failed to create segment output");
 
     let input_finished_receiver = input_finished_channel.1;
     let remote_analyzer_receiver = remote_analyzer_channel.1;
@@ -279,7 +282,10 @@ pub fn perform_encode_inner<
     }
     let _ = remote_listener.join();
 
-    mux_output_files(&opts.output, num_segments)?;
+    match &opts.output {
+        Output::File(output) => mux_output_files(&output, num_segments)?,
+        Output::Null => (),
+    };
 
     Ok(())
 }
@@ -344,7 +350,7 @@ fn watch_worker_updates(
 
 fn listen_for_local_workers<T: Pixel>(
     encode_opts: EncodeOptions,
-    output_file: &Path,
+    output_file: &Output,
     num_segments: &mut usize,
     thread_pool: &mut ThreadPool,
     rayon_pool: Arc<rayon::ThreadPool>,
@@ -365,7 +371,12 @@ fn listen_for_local_workers<T: Pixel>(
                     thread_pool,
                     rayon_pool.clone(),
                     progress_channels[slot].0.clone(),
-                    get_segment_output_filename(output_file, segment_idx),
+                    match output_file {
+                        Output::File(output_file) => {
+                            Output::File(get_segment_output_filename(output_file, segment_idx))
+                        }
+                        Output::Null => Output::Null,
+                    },
                 )?;
             }
             Ok(None) => {

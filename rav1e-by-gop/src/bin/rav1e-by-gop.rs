@@ -149,10 +149,6 @@ fn main() -> Result<()> {
         .get_matches();
     let opts = CliOptions::from(&matches);
     ensure!(
-        opts.output.extension().and_then(|ext| ext.to_str()) == Some("ivf"),
-        "Output must be a .ivf file"
-    );
-    ensure!(
         opts.max_keyint >= opts.min_keyint,
         "Max keyint must be greater than or equal to min keyint"
     );
@@ -181,7 +177,7 @@ fn main() -> Result<()> {
 #[derive(Debug, Clone)]
 pub struct CliOptions {
     input: Input,
-    output: PathBuf,
+    output: Output,
     speed: usize,
     qp: usize,
     min_keyint: u64,
@@ -199,13 +195,28 @@ pub struct CliOptions {
 impl From<&ArgMatches<'_>> for CliOptions {
     fn from(matches: &ArgMatches) -> Self {
         let input = matches.value_of("INPUT").unwrap();
+        let output = PathBuf::from(matches.value_of("OUTPUT").unwrap());
+        let output = if ["/dev/null", "nul", "null"]
+            .contains(&output.as_os_str().to_string_lossy().to_lowercase().as_str())
+        {
+            Output::Null
+        } else {
+            Output::File(output)
+        };
+        let temp_input = match output {
+            Output::File(_) => matches.is_present("INPUT_TEMP_FILES"),
+            Output::Null => {
+                info!("Null output unsupported with temp input files, disabling temp input");
+                false
+            }
+        };
         CliOptions {
             input: if input == "-" {
                 Input::Stdin
             } else {
                 Input::File(PathBuf::from(input))
             },
-            output: PathBuf::from(matches.value_of("OUTPUT").unwrap()),
+            output,
             speed: matches.value_of("SPEED").unwrap().parse().unwrap(),
             qp: matches.value_of("QP").unwrap().parse().unwrap(),
             min_keyint: matches.value_of("MIN_KEYINT").unwrap().parse().unwrap(),
@@ -245,7 +256,7 @@ impl From<&ArgMatches<'_>> for CliOptions {
                 }
             },
             use_local: !matches.is_present("NO_LOCAL"),
-            temp_input: matches.is_present("INPUT_TEMP_FILES"),
+            temp_input,
         }
     }
 }

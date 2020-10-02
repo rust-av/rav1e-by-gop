@@ -161,7 +161,10 @@ pub(crate) fn run_first_pass<
 
                             if opts.temp_input && !message.is_remote() {
                                 let file = File::create(get_segment_input_filename(
-                                    &opts.output,
+                                    match &opts.output {
+                                        Output::File(output) => &output,
+                                        Output::Null => unimplemented!("Temp file input not supported with /dev/null output")
+                                    },
                                     segment_no + 1,
                                 ))
                                 .unwrap();
@@ -305,7 +308,10 @@ pub(crate) fn run_first_pass<
                         let interval_len = interval.1 - interval.0;
                         if opts.temp_input && !message.is_remote() {
                             let file = File::create(get_segment_input_filename(
-                                &opts.output,
+                                match &opts.output {
+                                    Output::File(output) => &output,
+                                    Output::Null => unimplemented!("Temp file input not supported with /dev/null output")
+                                },
                                 segment_no + 1,
                             ))
                             .unwrap();
@@ -346,7 +352,10 @@ pub(crate) fn run_first_pass<
                                     SegmentFrameData::Y4MFile {
                                         frame_count,
                                         path: get_segment_input_filename(
-                                            &opts.output,
+                                            match &opts.output {
+                                                Output::File(output) => &output,
+                                                Output::Null => unimplemented!("Temp file input not supported with /dev/null output")
+                                            },
                                             segment_no + 1,
                                         ),
                                     }
@@ -395,7 +404,12 @@ pub(crate) fn run_first_pass<
                                 })
                                 .unwrap();
                             connection.encode_info = Some(EncodeInfo {
-                                output_file: get_segment_output_filename(&output, segment_no + 1),
+                                output_file: match output {
+                                    Output::File(output) => Output::File(
+                                        get_segment_output_filename(&output, segment_no + 1),
+                                    ),
+                                    Output::Null => Output::Null,
+                                },
                                 frame_count,
                                 next_analysis_frame: analysis_frameno - 1,
                                 segment_idx: segment_no + 1,

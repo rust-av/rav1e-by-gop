@@ -10,11 +10,11 @@
 mod ivf;
 
 use self::ivf::IvfMuxer;
+use crate::Output;
 use anyhow::Result;
 use rav1e::prelude::*;
 use std::ffi::OsStr;
 use std::io;
-use std::path::Path;
 
 pub trait Muxer {
     fn write_header(
@@ -30,20 +30,25 @@ pub trait Muxer {
     fn flush(&mut self) -> io::Result<()>;
 }
 
-pub fn create_muxer(path: &Path) -> Result<Box<dyn Muxer>> {
-    let ext = path
-        .extension()
-        .and_then(OsStr::to_str)
-        .map(str::to_lowercase)
-        .unwrap_or_else(|| "ivf".into());
+pub fn create_muxer(path: &Output) -> Result<Box<dyn Muxer>> {
+    match path {
+        Output::File(path) => {
+            let ext = path
+                .extension()
+                .and_then(OsStr::to_str)
+                .map(str::to_lowercase)
+                .unwrap_or_else(|| "ivf".into());
 
-    match &ext[..] {
-        "ivf" => IvfMuxer::open(path.to_str().unwrap()),
-        _e => {
-            panic!(
-                "{} is not a supported extension, please change to .ivf",
-                ext
-            );
+            match &ext[..] {
+                "ivf" => IvfMuxer::open(path.to_str().unwrap()),
+                _e => {
+                    panic!(
+                        "{} is not a supported extension, please change to .ivf",
+                        ext
+                    );
+                }
+            }
         }
+        Output::Null => Ok(IvfMuxer::null()),
     }
 }
