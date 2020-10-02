@@ -104,7 +104,8 @@ fn main() -> Result<()> {
         .arg(
             Arg::with_name("FRAMES")
                 .help("Limit the number of frames to encode")
-                .long("frames")
+                .long("limit")
+                .alias("frames")
                 .takes_value(true),
         )
         .arg(
