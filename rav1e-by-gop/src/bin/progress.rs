@@ -43,7 +43,7 @@ pub fn load_progress_file(outfile: &Output, matches: &ArgMatches) -> Option<Prog
                 true
             } else if matches.is_present("FORCE_OVERWRITE") {
                 false
-            } else if term_err.is_term() && matches.value_of("INPUT") != Some("-") {
+            } else if term_err.features().is_attended() && matches.value_of("INPUT") != Some("-") {
                 let resume;
                 loop {
                     let input = dialoguer::Input::<String>::new()

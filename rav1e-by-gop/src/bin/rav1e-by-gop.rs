@@ -232,7 +232,8 @@ impl From<&ArgMatches<'_>> for CliOptions {
                 .value_of("MEMORY_LIMIT")
                 .map(|val| MemoryUsage::from_str(val).expect("Invalid option for memory limit"))
                 .unwrap_or_default(),
-            display_progress: Term::stderr().is_term() && !matches.is_present("NO_PROGRESS"),
+            display_progress: Term::stderr().features().is_attended()
+                && !matches.is_present("NO_PROGRESS"),
             workers: {
                 let workers_file_path = matches.value_of("WORKERS").unwrap();
                 match File::open(workers_file_path) {
