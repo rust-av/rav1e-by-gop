@@ -985,14 +985,14 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.4.0-alpha"
-source = "git+https://github.com/xiph/rav1e#3a1cc6b7624fcf797296389afd0195b61f037dd4"
+source = "git+https://github.com/xiph/rav1e#109012a14a8c6bd69ffe34afe194022b8e54b592"
 dependencies = [
  "arbitrary 0.4.6",
  "arg_enum_proc_macro",
  "arrayvec",
  "bitstream-io 0.9.0",
  "cc",
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "interpolate_name",
  "itertools",
  "libc",
@@ -1541,9 +1541,9 @@ dependencies = [
 [[package]]
 name = "v_frame"
 version = "0.1.0"
-source = "git+https://github.com/xiph/rav1e#3a1cc6b7624fcf797296389afd0195b61f037dd4"
+source = "git+https://github.com/xiph/rav1e#109012a14a8c6bd69ffe34afe194022b8e54b592"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "noop_proc_macro",
  "num-derive",
  "num-traits",
@@ -1565,7 +1565,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#3a1cc6b7624fcf797296389afd0195b61f037dd4"
+source = "git+https://github.com/xiph/rav1e#109012a14a8c6bd69ffe34afe194022b8e54b592"
 dependencies = [
  "bitflags",
  "chrono",
