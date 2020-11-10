@@ -71,6 +71,7 @@ fn main() -> Result<()> {
                 .long("quantizer")
                 .takes_value(true),
         )
+        .arg(Arg::with_name("MAX_BITRATE").help("Max local bitrate (kbps)").long("max-bitrate").alias("vbv-maxrate").takes_value(true))
         .arg(
             Arg::with_name("MIN_KEYINT")
                 .help("Minimum distance between two keyframes")
@@ -180,6 +181,7 @@ pub struct CliOptions {
     output: Output,
     speed: usize,
     qp: usize,
+    max_bitrate: Option<i32>,
     min_keyint: u64,
     max_keyint: u64,
     max_threads: Option<usize>,
@@ -219,6 +221,9 @@ impl From<&ArgMatches<'_>> for CliOptions {
             output,
             speed: matches.value_of("SPEED").unwrap().parse().unwrap(),
             qp: matches.value_of("QP").unwrap().parse().unwrap(),
+            max_bitrate: matches
+                .value_of("MAX_BITRATE")
+                .map(|val| val.parse::<i32>().unwrap() * 1000),
             min_keyint: matches.value_of("MIN_KEYINT").unwrap().parse().unwrap(),
             max_keyint: matches.value_of("MAX_KEYINT").unwrap().parse().unwrap(),
             max_threads: matches
@@ -267,6 +272,7 @@ impl From<&CliOptions> for EncodeOptions {
         EncodeOptions {
             speed: other.speed,
             qp: other.qp,
+            max_bitrate: other.max_bitrate,
         }
     }
 }
