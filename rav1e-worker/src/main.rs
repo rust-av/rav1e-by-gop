@@ -5,6 +5,7 @@ use crossbeam_utils::thread::scope;
 use server::*;
 use std::env;
 use std::net::SocketAddrV4;
+use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
 use streams::*;
@@ -52,6 +53,12 @@ fn main() {
                 .long("threads")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("TEMP_DIR")
+                .help("Store input segments in temp files in the specified directory; by default stores in memory")
+                .long("temp-dir")
+                .takes_value(true)
+        )
         .get_matches();
 
     let server_ip = SocketAddrV4::new(
@@ -65,12 +72,24 @@ fn main() {
     {
         threads = threads.min(thread_setting);
     }
+    let temp_dir = if let Some(temp_dir) = matches.value_of("TEMP_DIR") {
+        let dir = PathBuf::from(temp_dir);
+        if !dir.is_dir() {
+            panic!("Specified temp dir does not exist or is not a directory");
+        }
+        if dir.metadata().unwrap().permissions().readonly() {
+            panic!("Specified temp dir is not writeable");
+        }
+        Some(dir)
+    } else {
+        None
+    };
 
     scope(|scope| {
         let slot_request_channel: SlotRequestChannel = unbounded();
         start_listener(server_ip, scope, slot_request_channel.0.clone(), threads)
             .expect("Server failed to start");
-        start_workers(threads, scope, slot_request_channel.1);
+        start_workers(threads, scope, slot_request_channel.1, temp_dir);
 
         loop {
             // Run the thread forever until terminated

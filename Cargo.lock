@@ -992,6 +992,7 @@ dependencies = [
  "anyhow",
  "bcrypt",
  "bincode",
+ "byteorder",
  "chrono",
  "clap",
  "crossbeam-channel",
