@@ -914,7 +914,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.4.0-alpha"
-source = "git+https://github.com/xiph/rav1e#8d860976b8916ceb17052107143a4b7c366c666c"
+source = "git+https://github.com/xiph/rav1e#625a2bbbdc657051e242033ac37a00200ace27b3"
 dependencies = [
  "arbitrary 0.4.7",
  "arg_enum_proc_macro",
@@ -1352,9 +1352,18 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "0.3.4"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "238ce071d267c5710f9d31451efec16c5ee22de34df17cc05e56cbc92e967117"
+checksum = "b78a366903f506d2ad52ca8dc552102ffdd3e937ba8a227f024dc1d1eae28575"
+dependencies = [
+ "tinyvec_macros",
+]
+
+[[package]]
+name = "tinyvec_macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "toml"
@@ -1408,9 +1417,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-normalization"
-version = "0.1.13"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fb19cf769fa8c6a80a162df694621ebeb4dafb606470b2b2fce0be40a98a977"
+checksum = "b7f98e67a4d84f730d343392f9bfff7d21e3fca562b9cb7a43b768350beeddc6"
 dependencies = [
  "tinyvec",
 ]
@@ -1458,7 +1467,7 @@ dependencies = [
 [[package]]
 name = "v_frame"
 version = "0.1.0"
-source = "git+https://github.com/xiph/rav1e#8d860976b8916ceb17052107143a4b7c366c666c"
+source = "git+https://github.com/xiph/rav1e#625a2bbbdc657051e242033ac37a00200ace27b3"
 dependencies = [
  "cfg-if 1.0.0",
  "noop_proc_macro",
@@ -1482,7 +1491,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#8d860976b8916ceb17052107143a4b7c366c666c"
+source = "git+https://github.com/xiph/rav1e#625a2bbbdc657051e242033ac37a00200ace27b3"
 dependencies = [
  "bitflags",
  "chrono",
