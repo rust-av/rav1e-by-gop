@@ -1291,8 +1291,7 @@ dependencies = [
 [[package]]
 name = "systemstat"
 version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1f726379f0c746ad672b7e932bd390b5faae073f502e37d314950ced761ac3e"
+source = "git+https://github.com/myfreeweb/systemstat#7f41dc20c7bdede420202ddc32dfe22accc4c866"
 dependencies = [
  "bytesize",
  "chrono",
