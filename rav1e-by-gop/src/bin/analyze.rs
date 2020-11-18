@@ -3,7 +3,7 @@ use crate::decode::{get_video_details, process_raw_frame, read_raw_frame, Decode
 use crate::progress::{get_segment_input_filename, get_segment_output_filename};
 use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
 use crate::CliOptions;
-use av_scenechange::{DetectionOptions, SceneChangeDetector};
+use av_scenechange::{new_detector, DetectionOptions};
 use byteorder::{LittleEndian, WriteBytesExt};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossbeam_utils::thread::Scope;
@@ -66,7 +66,7 @@ pub(crate) fn run_first_pass<
 ) {
     let sc_opts = DetectionOptions {
         fast_analysis: opts.speed >= 10,
-        ignore_flashes: false,
+        ignore_flashes: true,
         lookahead_distance: 5,
         min_scenecut_distance: Some(opts.min_keyint as usize),
         max_scenecut_distance: Some(opts.max_keyint as usize),
@@ -105,8 +105,7 @@ pub(crate) fn run_first_pass<
         .unwrap_or(usize::max_value());
     scope
         .spawn(move |scope| {
-            let mut detector =
-                SceneChangeDetector::new(dec.get_bit_depth(), cfg.chroma_sampling, &sc_opts);
+            let mut detector = new_detector(&mut dec, sc_opts);
             let mut analysis_frameno = next_frameno;
             let mut lookahead_frameno = 0;
             let mut segment_no = 0;
@@ -115,7 +114,7 @@ pub(crate) fn run_first_pass<
             let mut next_known_keyframe = known_keyframes.iter().nth(1).copied();
             let mut keyframes: BTreeSet<usize> = known_keyframes.clone();
             keyframes.insert(0);
-            let mut lookahead_queue: BTreeMap<usize, Frame<T>> = BTreeMap::new();
+            let mut lookahead_queue: BTreeMap<usize, Arc<Frame<T>>> = BTreeMap::new();
 
             let enc_cfg = build_encoder_config(opts.speed, opts.qp, opts.max_bitrate, video_info, rayon_pool);
             let ctx: Context<T> = enc_cfg.new_context::<T>().unwrap();
@@ -226,7 +225,7 @@ pub(crate) fn run_first_pass<
                                     Ok(frame) => {
                                         lookahead_queue.insert(
                                             lookahead_frameno,
-                                            process_raw_frame(&frame, &ctx, &cfg),
+                                            Arc::new(process_raw_frame(&frame, &ctx, &cfg)),
                                         );
                                         lookahead_frameno += 1;
                                     }
@@ -248,13 +247,16 @@ pub(crate) fn run_first_pass<
                                     .skip_while(|(frameno, _)| **frameno < analysis_frameno - 1)
                                     .take(lookahead_distance + 1)
                                     .map(|(_, frame)| frame)
+                                    .cloned()
                                     .collect::<Vec<_>>();
                                 if frame_set.len() >= 2 {
-                                    detector.analyze_next_frame(
+                                    if detector.analyze_next_frame(
                                         &frame_set,
-                                        analysis_frameno,
-                                        &mut keyframes,
-                                    );
+                                        analysis_frameno as u64,
+                                        *keyframes.iter().last().unwrap() as u64
+                                    ) {
+                                        keyframes.insert(analysis_frameno);
+                                    }
                                 } else {
                                     // End of encode
                                     keyframes.insert(*lookahead_queue.iter().last().unwrap().0 + 1);
@@ -323,7 +325,7 @@ pub(crate) fn run_first_pass<
                             for frameno in (interval.0)..(interval.1) {
                                 frame_count += 1;
                                 let frame_data =
-                                    bincode::serialize(&lookahead_queue.remove(&frameno).unwrap())
+                                    bincode::serialize(&Arc::try_unwrap(lookahead_queue.remove(&frameno).unwrap()).unwrap())
                                         .unwrap();
                                 writer
                                     .write_u32::<LittleEndian>(frame_data.len() as u32)

@@ -11,7 +11,7 @@ autobins = false
 [dependencies]
 anyhow = "1.0"
 arrayvec = "0.5"
-av-scenechange = { version = "0.4", default-features = false, features = [ "serde" ], optional = true }
+av-scenechange = { git = "https://github.com/rust-av/av-scenechange", default-features = false, features = [ "serde" ], optional = true }
 bincode = "1.3"
 byteorder = "1.3.4"
 clap = { version = "2", optional = true }
