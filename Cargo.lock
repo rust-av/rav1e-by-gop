@@ -76,7 +76,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "av-scenechange"
 version = "0.4.2"
-source = "git+https://github.com/rust-av/av-scenechange#05a03e3e9818e28bf7d9076f0ebee10d7bfa0c27"
+source = "git+https://github.com/rust-av/av-scenechange#dc17546bf0c4029ae988e832743c386ee2e2262e"
 dependencies = [
  "rav1e",
  "serde",
@@ -939,7 +939,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.4.0-alpha"
-source = "git+https://github.com/xiph/rav1e#db127a438600667827a0994a25e7b01d33528c1e"
+source = "git+https://github.com/xiph/rav1e#84f82c70e3b2c47d72dbbd6af6f181fc5ec0ed46"
 dependencies = [
  "arbitrary 0.4.7",
  "arg_enum_proc_macro",
@@ -1534,7 +1534,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#db127a438600667827a0994a25e7b01d33528c1e"
+source = "git+https://github.com/xiph/rav1e#84f82c70e3b2c47d72dbbd6af6f181fc5ec0ed46"
 dependencies = [
  "bitflags",
  "chrono",
