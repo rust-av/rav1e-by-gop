@@ -1,6 +1,7 @@
 use clap::{App, Arg};
 use lazy_static::lazy_static;
 use log::{debug, log_enabled};
+use parking_lot::RwLock;
 use rand::Rng;
 use rav1e_by_gop::{EncodeOptions, EncodeState, VideoDetails};
 use server::*;
@@ -9,7 +10,6 @@ use std::env;
 use std::net::SocketAddrV4;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::sync::RwLock;
 use tokio::time::delay_for;
 use uuid::v1::Context;
 use uuid::Uuid;
@@ -146,10 +146,10 @@ async fn main() {
     loop {
         // Run the main thread forever until terminated
         if log_enabled!(log::Level::Debug) {
-            let queue_handle = ENCODER_QUEUE.read().await;
+            let queue_handle = ENCODER_QUEUE.read();
             let mut items = Vec::with_capacity(queue_handle.len());
             for (key, item) in queue_handle.iter() {
-                items.push((key, item.read().await));
+                items.push((key, item.read()));
             }
             debug!("Items in queue: {:?}", items);
         }

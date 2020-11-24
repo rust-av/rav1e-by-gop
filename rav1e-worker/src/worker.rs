@@ -30,10 +30,10 @@ pub async fn start_workers(worker_threads: usize) {
         loop {
             delay_for(Duration::from_secs(3)).await;
 
-            let reader = ENCODER_QUEUE.read().await;
+            let reader = ENCODER_QUEUE.read();
             let mut in_progress_items = 0;
             for item in reader.values() {
-                match item.read().await.state {
+                match item.read().state {
                     EncodeState::Enqueued => (),
                     _ => {
                         in_progress_items += 1;
@@ -45,7 +45,7 @@ pub async fn start_workers(worker_threads: usize) {
             }
 
             for (&request_id, item) in reader.iter() {
-                let mut item_handle = item.write().await;
+                let mut item_handle = item.write();
                 match item_handle.state {
                     EncodeState::Enqueued if in_progress_items < worker_threads => {
                         info!("A slot is ready for request {}", request_id);
@@ -97,8 +97,8 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     pool: Arc<rayon::ThreadPool>,
 ) {
     {
-        let queue_handle = ENCODER_QUEUE.read().await;
-        let mut item_handle = queue_handle.get(&request_id).unwrap().write().await;
+        let queue_handle = ENCODER_QUEUE.read();
+        let mut item_handle = queue_handle.get(&request_id).unwrap().write();
         item_handle.state = EncodeState::InProgress {
             progress: ProgressInfo::new(
                 Rational::from_reciprocal(item_handle.video_info.time_base),
@@ -175,13 +175,8 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     loop {
         match process_frame(&mut ctx, &mut source) {
             Ok(ProcessFrameResult::Packet(packet)) => {
-                output.write_frame(
-                    packet.input_frameno as u64,
-                    packet.data.as_ref(),
-                    packet.frame_type,
-                );
-                let queue_handle = ENCODER_QUEUE.read().await;
-                let mut item_handle = queue_handle.get(&request_id).unwrap().write().await;
+                let queue_handle = ENCODER_QUEUE.read();
+                let mut item_handle = queue_handle.get(&request_id).unwrap().write();
                 if let EncodeState::InProgress { ref mut progress } = item_handle.state {
                     output.write_frame(
                         packet.input_frameno as u64,
@@ -189,6 +184,8 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
                         packet.frame_type,
                     );
                     progress.add_packet(*packet);
+                } else {
+                    unreachable!();
                 }
             }
             Ok(ProcessFrameResult::NoPacket(_)) => {
@@ -208,8 +205,8 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     }
 
     {
-        let queue_handle = ENCODER_QUEUE.read().await;
-        let mut item_handle = queue_handle.get(&request_id).unwrap().write().await;
+        let queue_handle = ENCODER_QUEUE.read();
+        let mut item_handle = queue_handle.get(&request_id).unwrap().write();
         item_handle.state = if let EncodeState::InProgress { ref progress } = item_handle.state {
             EncodeState::EncodingDone {
                 progress: progress.clone(),

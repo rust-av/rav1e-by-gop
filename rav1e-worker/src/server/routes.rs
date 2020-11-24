@@ -7,6 +7,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
 use chrono::Utc;
 use http::header::{HeaderValue, CONTENT_TYPE};
+use parking_lot::RwLock;
 use rav1e_by_gop::{
     decompress_frame, EncodeState, GetInfoResponse, GetProgressResponse, PostEnqueueResponse,
     PostSegmentMessage, SegmentFrameData, SerializableProgressInfo, SlotRequestMessage,
@@ -15,7 +16,6 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use uuid::v1::Timestamp;
 use uuid::Uuid;
 use warp::http::StatusCode;
@@ -73,10 +73,10 @@ async fn get_info(_auth: (), worker_threads: usize) -> Result<impl Reply, Reject
 
 // this endpoint tells a client if their slot is ready
 async fn get_enqueue(request_id: Uuid, _auth: ()) -> Result<impl Reply, Rejection> {
-    let reader = ENCODER_QUEUE.read().await;
+    let reader = ENCODER_QUEUE.read();
     let item = reader.get(&request_id);
     if let Some(item) = item {
-        match item.read().await.state {
+        match item.read().state {
             EncodeState::Enqueued => Ok(warp::reply::with_status(
                 warp::reply::json(&()),
                 StatusCode::ACCEPTED,
@@ -107,7 +107,7 @@ async fn post_enqueue(_auth: (), body: SlotRequestMessage) -> Result<impl Reply,
 
     let ts = Timestamp::from_unix(&*UUID_CONTEXT, 1497624119, 1234);
     let request_id = try_or_500!(Uuid::new_v1(ts, &UUID_NODE_ID));
-    ENCODER_QUEUE.write().await.insert(
+    ENCODER_QUEUE.write().insert(
         request_id,
         RwLock::new(EncodeItem::new(body.options, body.video_info)),
     );
@@ -123,9 +123,8 @@ async fn post_segment(
     _auth: (),
     body: PostSegmentMessage,
 ) -> Result<impl Reply, Rejection> {
-    let queue_handle = ENCODER_QUEUE.read().await;
-    if let Some(item) = queue_handle.get(&request_id) {
-        let mut item_handle = item.write().await;
+    if let Some(item) = ENCODER_QUEUE.read().get(&request_id) {
+        let mut item_handle = item.write();
         match item_handle.state {
             EncodeState::AwaitingInfo { .. } => (),
             _ => {
@@ -160,9 +159,8 @@ async fn post_segment_data(
     body: Bytes,
     temp_dir: Option<PathBuf>,
 ) -> Result<impl Reply, Rejection> {
-    let queue_handle = ENCODER_QUEUE.read().await;
-    if let Some(item) = queue_handle.get(&request_id) {
-        let mut item_handle = item.write().await;
+    if let Some(item) = ENCODER_QUEUE.read().get(&request_id) {
+        let mut item_handle = item.write();
         let frame_data;
         let keyframe_number_outer;
         let next_analysis_frame_outer;
@@ -231,9 +229,8 @@ async fn post_segment_data(
 
 // returns progress on currently encoded segment
 async fn get_segment(request_id: Uuid, _auth: ()) -> Result<impl Reply, Rejection> {
-    let reader = ENCODER_QUEUE.read().await;
-    if let Some(item) = reader.get(&request_id) {
-        let item_reader = item.read().await;
+    if let Some(item) = ENCODER_QUEUE.read().get(&request_id) {
+        let item_reader = item.read();
         match item_reader.state {
             EncodeState::InProgress { ref progress, .. } => Ok(warp::reply::with_status(
                 warp::reply::json(&GetProgressResponse {
@@ -266,9 +263,8 @@ async fn get_segment(request_id: Uuid, _auth: ()) -> Result<impl Reply, Rejectio
 async fn get_segment_data(request_id: Uuid, _auth: ()) -> Result<impl Reply, Rejection> {
     // Check first without mutating the state
     let mut can_send_data = false;
-    let queue_handle = ENCODER_QUEUE.read().await;
-    if let Some(item) = queue_handle.get(&request_id) {
-        if let EncodeState::EncodingDone { .. } = item.read().await.state {
+    if let Some(item) = ENCODER_QUEUE.read().get(&request_id) {
+        if let EncodeState::EncodingDone { .. } = item.read().state {
             can_send_data = true;
         }
     }
@@ -280,8 +276,11 @@ async fn get_segment_data(request_id: Uuid, _auth: ()) -> Result<impl Reply, Rej
     }
 
     // Now pop it from the queue and send it, freeing the resources simultaneously
-    let mut queue_handle = ENCODER_QUEUE.write().await;
-    if let Some(item) = queue_handle.remove(&request_id) {
+    let item = {
+        let mut queue_handle = ENCODER_QUEUE.write();
+        queue_handle.remove(&request_id)
+    };
+    if let Some(item) = item {
         if let EncodeState::EncodingDone { encoded_data, .. } = item.into_inner().state {
             return Ok(warp::reply::with_status(
                 {
