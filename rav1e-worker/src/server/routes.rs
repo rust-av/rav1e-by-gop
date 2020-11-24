@@ -81,10 +81,9 @@ async fn get_enqueue(request_id: Uuid, _auth: ()) -> Result<impl Reply, Rejectio
                 warp::reply::json(&()),
                 StatusCode::ACCEPTED,
             )),
-            EncodeState::AwaitingData { .. } => Ok(warp::reply::with_status(
-                warp::reply::json(&()),
-                StatusCode::OK,
-            )),
+            EncodeState::AwaitingInfo { .. } | EncodeState::AwaitingData { .. } => Ok(
+                warp::reply::with_status(warp::reply::json(&()), StatusCode::OK),
+            ),
             _ => Ok(warp::reply::with_status(
                 warp::reply::json(&()),
                 StatusCode::GONE,
