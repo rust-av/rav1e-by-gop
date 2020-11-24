@@ -60,19 +60,16 @@ because unfortunately self-signed certs will not work.
 You can configure rav1e-worker to use secure TLS connections.
 If you have a signed TLS certificate you would like to use,
 or would like to get one for free from Let's Encrypt,
-you can create an identity file for rav1e-worker to read
-with the following command:
+you can use environment variables to tell rav1e-by-gop to use it.
+
+e.g.
 
 ```
-openssl pkcs12 -export -out identity.p12 -inkey /etc/letsencrypt/live/mydomain.example/privkey.pem -in /etc/letsencrypt/live/mydomain.example/cert.pem -certfile /etc/letsencrypt/live/mydomain.example/chain.pem
+TLS_CERT_PATH=/etc/letsencrypt/live/mydomain.example/cert.pem
+TLS_KEY_PATH=/etc/letsencrypt/live/mydomain.example/privkey.pem
 ```
 
-You can tell rav1e-worker to accept TLS connections by
-by setting the path to the identity file
-in the `IDENTITY_FILE` environment variable.
-If your identity file has a password, you can set the password
-via the `IDENTITY_PASSWORD` environment variable. By default,
-a passwordless identity file is assumed.
+Setting both of these will automatically enable TLS in the rav1e-worker server.
 
 You must also create a password for clients to use to connect to the server.
 This is mandatory. You should set this password to the `SERVER_PASSWORD` environment variable.

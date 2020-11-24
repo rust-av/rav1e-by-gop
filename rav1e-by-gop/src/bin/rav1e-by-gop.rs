@@ -12,6 +12,7 @@ use self::progress::*;
 use anyhow::{ensure, Result};
 use clap::{App, Arg, ArgMatches};
 use console::{style, Term};
+use lazy_static::lazy_static;
 use log::info;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
@@ -29,6 +30,10 @@ use systemstat::{ByteSize, Platform, System};
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
+lazy_static! {
+    static ref CLIENT: reqwest::blocking::Client = reqwest::blocking::Client::new();
+}
 
 fn main() -> Result<()> {
     if env::var("RUST_LOG").is_err() {
@@ -211,6 +216,7 @@ impl From<&ArgMatches<'_>> for CliOptions {
                 info!("Null output unsupported with temp input files, disabling temp input");
                 false
             }
+            _ => unreachable!(),
         };
         CliOptions {
             input: if input == "-" {

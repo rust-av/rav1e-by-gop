@@ -1,26 +1,58 @@
-use crate::channels::SlotRequestChannel;
 use clap::{App, Arg};
-use crossbeam_channel::unbounded;
-use crossbeam_utils::thread::scope;
+use lazy_static::lazy_static;
+use rand::Rng;
+use rav1e_by_gop::{EncodeOptions, EncodeState, VideoDetails};
 use server::*;
+use std::collections::BTreeMap;
 use std::env;
 use std::net::SocketAddrV4;
 use std::path::PathBuf;
-use std::thread::sleep;
 use std::time::Duration;
-use streams::*;
+use tokio::sync::RwLock;
+use tokio::time::delay_for;
+use uuid::v1::Context;
+use uuid::Uuid;
 use worker::*;
 
-mod channels;
 mod server;
-mod streams;
 mod worker;
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-fn main() {
+lazy_static! {
+    pub static ref ENCODER_QUEUE: RwLock<BTreeMap<Uuid, RwLock<EncodeItem>>> =
+        RwLock::new(BTreeMap::new());
+    pub static ref UUID_CONTEXT: Context = Context::new(0);
+    pub static ref UUID_NODE_ID: Box<[u8]> = {
+        let mut id = Vec::with_capacity(6);
+        let mut rng = rand::thread_rng();
+        for _ in 0..6 {
+            id.push(rng.gen());
+        }
+        id.into_boxed_slice()
+    };
+}
+
+pub struct EncodeItem {
+    pub state: EncodeState,
+    pub options: EncodeOptions,
+    pub video_info: VideoDetails,
+}
+
+impl EncodeItem {
+    fn new(options: EncodeOptions, video_info: VideoDetails) -> Self {
+        EncodeItem {
+            state: EncodeState::Enqueued,
+            options,
+            video_info,
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
     env::var("SERVER_PASSWORD").expect("SERVER_PASSWORD env var MUST be set!");
 
     if env::var("RUST_LOG").is_err() {
@@ -85,16 +117,11 @@ fn main() {
         None
     };
 
-    scope(|scope| {
-        let slot_request_channel: SlotRequestChannel = unbounded();
-        start_listener(server_ip, scope, slot_request_channel.0.clone(), threads)
-            .expect("Server failed to start");
-        start_workers(threads, scope, slot_request_channel.1, temp_dir);
+    start_listener(server_ip, temp_dir, threads).await;
+    start_workers(threads).await;
 
-        loop {
-            // Run the thread forever until terminated
-            sleep(Duration::from_secs(60));
-        }
-    })
-    .unwrap();
+    loop {
+        // Run the main thread forever until terminated
+        delay_for(Duration::from_secs(60)).await;
+    }
 }

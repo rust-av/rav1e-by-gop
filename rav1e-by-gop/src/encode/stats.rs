@@ -1030,20 +1030,20 @@ fn secs_to_human_time(mut secs: u64, always_show_hours: bool) -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SerializableProgressInfo {
-    frame_rate: (u64, u64),
-    frame_info: Vec<SerializableFrameSummary>,
-    encoded_size: usize,
-    keyframes: BTreeSet<usize>,
-    completed_segments: BTreeSet<usize>,
-    next_analysis_frame: usize,
+    pub frame_rate: (u64, u64),
+    pub frame_info: Vec<SerializableFrameSummary>,
+    pub encoded_size: usize,
+    pub keyframes: BTreeSet<usize>,
+    pub completed_segments: BTreeSet<usize>,
+    pub next_analysis_frame: usize,
     // Wall encoding time elapsed so far, in seconds
     #[serde(default)]
-    elapsed_time: u64,
+    pub elapsed_time: u64,
     #[serde(default)]
-    encoding_stats: (SerializableEncoderStats, SerializableEncoderStats),
-    total_frames: usize,
+    pub encoding_stats: (SerializableEncoderStats, SerializableEncoderStats),
+    pub total_frames: usize,
     #[serde(default)]
-    frame_limit: Option<u64>,
+    pub frame_limit: Option<u64>,
 }
 
 impl From<&ProgressInfo> for SerializableProgressInfo {

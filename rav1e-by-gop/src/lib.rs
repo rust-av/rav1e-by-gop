@@ -14,8 +14,7 @@ use rav1e::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tungstenite::client::AutoStream;
-use tungstenite::WebSocket;
+use url::Url;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -69,8 +68,9 @@ pub enum SegmentFrameData {
 }
 
 pub struct ActiveConnection {
-    pub socket: WebSocket<AutoStream>,
-    pub connection_id: Option<Uuid>,
+    pub worker_uri: Url,
+    pub worker_password: String,
+    pub request_id: Uuid,
     pub slot_in_worker: usize,
     pub video_info: VideoDetails,
     pub encode_info: Option<EncodeInfo>,
@@ -99,7 +99,7 @@ pub struct WorkerStatusUpdate {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SlotStatus {
-    None,
+    Empty,
     Requested,
 }
 
@@ -153,4 +153,5 @@ pub fn build_base_encoder_config(
 pub enum Output {
     File(PathBuf),
     Null,
+    Memory,
 }

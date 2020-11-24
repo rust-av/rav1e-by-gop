@@ -1,6 +1,5 @@
 use crate::{EncodeOptions, VideoDetails};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// The client sends this as a text-based "handshake" to discover
 /// the number of worker threads available in the server.
@@ -17,12 +16,4 @@ pub struct SlotRequestMessage {
     pub options: EncodeOptions,
     pub video_info: VideoDetails,
     pub client_version: semver::Version,
-}
-
-/// Use this to send y4m frame data, loaded into the v_frame struct,
-/// from the client to the server.
-#[derive(Serialize, Deserialize)]
-pub struct RawFrameData {
-    pub connection_id: Uuid,
-    pub compressed_frames: Vec<Vec<u8>>,
 }

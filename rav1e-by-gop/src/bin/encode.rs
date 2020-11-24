@@ -243,7 +243,7 @@ pub fn perform_encode_inner<
     // Write only the ivf header
     create_muxer(&match &opts.output {
         Output::File(output_file) => Output::File(get_segment_output_filename(&output_file, 0)),
-        Output::Null => Output::Null,
+        x => x.clone(),
     })
     .map(|mut output| {
         output.write_header(
@@ -283,9 +283,8 @@ pub fn perform_encode_inner<
     }
     let _ = remote_listener.join();
 
-    match &opts.output {
-        Output::File(output) => mux_output_files(&output, num_segments)?,
-        Output::Null => (),
+    if let Output::File(output) = &opts.output {
+        mux_output_files(&output, num_segments)?;
     };
 
     Ok(())
@@ -376,7 +375,7 @@ fn listen_for_local_workers<T: Pixel>(
                         Output::File(output_file) => {
                             Output::File(get_segment_output_filename(output_file, segment_idx))
                         }
-                        Output::Null => Output::Null,
+                        x => x.clone(),
                     },
                 )?;
             }

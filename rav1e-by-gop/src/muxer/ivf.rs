@@ -14,13 +14,13 @@ use ivf::*;
 use rav1e::prelude::*;
 use std::fs::File;
 use std::io;
-use std::io::{sink, BufWriter, Write};
+use std::io::{sink, BufWriter, Sink, Write};
 
-pub struct IvfMuxer {
-    output: Box<dyn Write>,
+pub struct IvfMuxer<W: Write> {
+    pub output: W,
 }
 
-impl Muxer for IvfMuxer {
+impl<W: Write> Muxer for IvfMuxer<W> {
     fn write_header(
         &mut self,
         width: usize,
@@ -46,18 +46,19 @@ impl Muxer for IvfMuxer {
     }
 }
 
-impl IvfMuxer {
-    pub fn open(path: &str) -> Result<Box<dyn Muxer>> {
+impl<W: Write> IvfMuxer<W> {
+    pub fn open(path: &str) -> Result<IvfMuxer<BufWriter<File>>> {
         let ivf = IvfMuxer {
-            output: Box::new(BufWriter::new(File::create(path)?)),
+            output: BufWriter::new(File::create(path)?),
         };
-        Ok(Box::new(ivf))
+        Ok(ivf)
     }
 
-    pub fn null() -> Box<dyn Muxer> {
-        let ivf = IvfMuxer {
-            output: Box::new(sink()),
-        };
-        Box::new(ivf)
+    pub fn null() -> IvfMuxer<Sink> {
+        IvfMuxer { output: sink() }
+    }
+
+    pub fn in_memory() -> IvfMuxer<Vec<u8>> {
+        IvfMuxer { output: Vec::new() }
     }
 }

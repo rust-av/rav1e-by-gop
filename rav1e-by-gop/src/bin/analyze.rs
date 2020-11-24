@@ -1,13 +1,11 @@
-use crate::compress_frame;
 use crate::decode::{get_video_details, process_raw_frame, read_raw_frame, DecodeError};
 use crate::progress::{get_segment_input_filename, get_segment_output_filename};
 use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
-use crate::CliOptions;
+use crate::{compress_frame, CliOptions, CLIENT};
 use av_scenechange::{new_detector, DetectionOptions};
 use byteorder::{LittleEndian, WriteBytesExt};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossbeam_utils::thread::Scope;
-use http::request::Request;
 use itertools::Itertools;
 use log::{debug, error};
 use parking_lot::Mutex;
@@ -22,7 +20,6 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 use systemstat::ByteSize;
-use tungstenite::{connect, Message};
 use v_frame::frame::Frame;
 use v_frame::pixel::Pixel;
 use y4m::Decoder;
@@ -165,7 +162,8 @@ pub(crate) fn run_first_pass<
                                 let file = File::create(get_segment_input_filename(
                                     match &opts.output {
                                         Output::File(output) => &output,
-                                        Output::Null => unimplemented!("Temp file input not supported with /dev/null output")
+                                        Output::Null => unimplemented!("Temp file input not supported with /dev/null output"),
+                                        _ => unreachable!()
                                     },
                                     segment_no + 1,
                                 ))
@@ -288,7 +286,7 @@ pub(crate) fn run_first_pass<
                                         connection
                                             .worker_update_sender
                                             .send(WorkerStatusUpdate {
-                                                status: Some(SlotStatus::None),
+                                                status: Some(SlotStatus::Empty),
                                                 slot_delta: Some((
                                                     connection.slot_in_worker,
                                                     false,
@@ -315,7 +313,8 @@ pub(crate) fn run_first_pass<
                             let file = File::create(get_segment_input_filename(
                                 match &opts.output {
                                     Output::File(output) => &output,
-                                    Output::Null => unimplemented!("Temp file input not supported with /dev/null output")
+                                    Output::Null => unimplemented!("Temp file input not supported with /dev/null output"),
+                                    _ => unimplemented!()
                                 },
                                 segment_no + 1,
                             ))
@@ -359,7 +358,8 @@ pub(crate) fn run_first_pass<
                                         path: get_segment_input_filename(
                                             match &opts.output {
                                                 Output::File(output) => &output,
-                                                Output::Null => unimplemented!("Temp file input not supported with /dev/null output")
+                                                Output::Null => unimplemented!("Temp file input not supported with /dev/null output"),
+                                                _ => unimplemented!()
                                             },
                                             segment_no + 1,
                                         ),
@@ -376,35 +376,32 @@ pub(crate) fn run_first_pass<
                         let remote_sender = remote_sender.clone();
                         scope.spawn(move |_| {
                             let frame_count = processed_frames.len();
-                            let raw_data = RawFrameData {
-                                connection_id: connection.connection_id.unwrap(),
-                                compressed_frames: processed_frames,
-                            };
-
                             connection
                                 .progress_sender
                                 .send(ProgressStatus::Sending(ByteSize(
-                                    raw_data
-                                        .compressed_frames
+                                    processed_frames
                                         .iter()
                                         .map(|frame| frame.len() as u64)
                                         .sum(),
                                 )))
                                 .unwrap();
-                            while let Err(e) = connection.socket.write_message(Message::Binary(
-                                rmp_serde::to_vec(&raw_data).unwrap(),
-                            )) {
-                                error!(
-                                    "Failed to send frames to connection {}: {}",
-                                    connection.connection_id.unwrap(),
-                                    e
-                                );
-                                sleep(Duration::from_secs(1));
+                            while let Err(e) = CLIENT
+                                .post(&format!("{}{}/{}", &connection.worker_uri, "/segment_data", connection.request_id))
+                                .header("X-RAV1E-AUTH", &connection.worker_password)
+                                .body(bincode::serialize(&processed_frames).unwrap())
+                                .send()
+                                .and_then(|res| res.error_for_status()) {
+                                    error!(
+                                        "Failed to send frames to connection {}: {}",
+                                        connection.request_id,
+                                        e
+                                    );
+                                    sleep(Duration::from_secs(5));
                             }
                             connection
                                 .worker_update_sender
                                 .send(WorkerStatusUpdate {
-                                    status: Some(SlotStatus::None),
+                                    status: Some(SlotStatus::Empty),
                                     slot_delta: None,
                                 })
                                 .unwrap();
@@ -413,7 +410,7 @@ pub(crate) fn run_first_pass<
                                     Output::File(output) => Output::File(
                                         get_segment_output_filename(&output, segment_no + 1),
                                     ),
-                                    Output::Null => Output::Null,
+                                    x => x
                                 },
                                 frame_count,
                                 next_analysis_frame: analysis_frameno - 1,
@@ -440,7 +437,7 @@ pub(crate) fn run_first_pass<
                 connection
                     .worker_update_sender
                     .send(WorkerStatusUpdate {
-                        status: Some(SlotStatus::None),
+                        status: Some(SlotStatus::Empty),
                         slot_delta: Some((connection.slot_in_worker, false)),
                     })
                     .unwrap();
@@ -487,23 +484,12 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
                 worker_start_idx += worker.workers.len();
                 continue;
             }
-            if let SlotStatus::None = worker.slot_status {
+            if let SlotStatus::Empty = worker.slot_status {
                 debug!("Empty connection--requesting new slot");
-                let request = Request::builder()
-                    .uri(worker.uri.as_str())
+                match CLIENT
+                    .post(&format!("{}{}", &worker.uri, "/enqueue"))
                     .header("X-RAV1E-AUTH", &worker.password)
-                    .body(())
-                    .unwrap();
-                let mut connection = match connect(request) {
-                    Ok(c) => c.0,
-                    Err(e) => {
-                        error!("Failed to connect to {}: {}", worker.uri, e);
-                        worker_start_idx += worker.workers.len();
-                        continue;
-                    }
-                };
-                if let Err(e) = connection.write_message(Message::Binary(
-                    rmp_serde::to_vec(&SlotRequestMessage {
+                    .json(&SlotRequestMessage {
                         options: EncodeOptions {
                             speed,
                             qp,
@@ -512,26 +498,33 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
                         video_info,
                         client_version: semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap(),
                     })
-                    .unwrap(),
-                )) {
-                    let _ = connection.close(None);
-                    error!("Failed to send slot request to {}: {}", worker.uri, e);
-                    worker_start_idx += worker.workers.len();
-                    continue;
-                };
-                worker.slot_status = SlotStatus::Requested;
-                let slot = worker.workers.iter().position(|worker| !worker).unwrap();
-                let connection = ActiveConnection {
-                    socket: connection,
-                    video_info,
-                    connection_id: None,
-                    encode_info: None,
-                    worker_update_sender: worker.update_channel.0.clone(),
-                    slot_in_worker: slot,
-                    progress_sender: remote_progress_senders[worker_start_idx + slot].clone(),
-                };
-                let slot_ready_sender = slot_ready_sender.clone();
-                scope.spawn(move |_| wait_for_slot_allocation::<T>(connection, slot_ready_sender));
+                    .send()
+                    .and_then(|res| res.error_for_status())
+                    .and_then(|res| res.json::<PostEnqueueResponse>())
+                {
+                    Ok(response) => {
+                        worker.slot_status = SlotStatus::Requested;
+                        let slot = worker.workers.iter().position(|worker| !worker).unwrap();
+                        let connection = ActiveConnection {
+                            worker_uri: worker.uri.clone(),
+                            worker_password: worker.password.clone(),
+                            video_info,
+                            request_id: response.request_id,
+                            encode_info: None,
+                            worker_update_sender: worker.update_channel.0.clone(),
+                            slot_in_worker: slot,
+                            progress_sender: remote_progress_senders[worker_start_idx + slot]
+                                .clone(),
+                        };
+                        let slot_ready_sender = slot_ready_sender.clone();
+                        scope.spawn(move |_| {
+                            wait_for_slot_allocation::<T>(connection, slot_ready_sender)
+                        });
+                    }
+                    Err(e) => {
+                        error!("Failed to contact remote server: {}", e);
+                    }
+                }
             }
             worker_start_idx += worker.workers.len();
         }

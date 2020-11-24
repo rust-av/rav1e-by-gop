@@ -9,12 +9,14 @@
 
 mod ivf;
 
-use self::ivf::IvfMuxer;
+pub use self::ivf::IvfMuxer;
 use crate::Output;
 use anyhow::Result;
 use rav1e::prelude::*;
 use std::ffi::OsStr;
+use std::fs::File;
 use std::io;
+use std::io::{BufWriter, Sink};
 
 pub trait Muxer {
     fn write_header(
@@ -40,7 +42,9 @@ pub fn create_muxer(path: &Output) -> Result<Box<dyn Muxer>> {
                 .unwrap_or_else(|| "ivf".into());
 
             match &ext[..] {
-                "ivf" => IvfMuxer::open(path.to_str().unwrap()),
+                "ivf" => Ok(Box::new(IvfMuxer::<BufWriter<File>>::open(
+                    path.to_str().unwrap(),
+                )?)),
                 _e => {
                     panic!(
                         "{} is not a supported extension, please change to .ivf",
@@ -49,6 +53,7 @@ pub fn create_muxer(path: &Output) -> Result<Box<dyn Muxer>> {
                 }
             }
         }
-        Output::Null => Ok(IvfMuxer::null()),
+        Output::Memory => Ok(Box::new(IvfMuxer::<Vec<u8>>::in_memory())),
+        Output::Null => Ok(Box::new(IvfMuxer::<Sink>::null())),
     }
 }
