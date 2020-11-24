@@ -1044,6 +1044,8 @@ pub struct SerializableProgressInfo {
     pub total_frames: usize,
     #[serde(default)]
     pub frame_limit: Option<u64>,
+    #[serde(default)]
+    pub segment_idx: usize,
 }
 
 impl From<&ProgressInfo> for SerializableProgressInfo {
@@ -1066,6 +1068,7 @@ impl From<&ProgressInfo> for SerializableProgressInfo {
             ),
             total_frames: other.total_frames,
             frame_limit: other.frame_limit,
+            segment_idx: other.segment_idx,
         }
     }
 }
@@ -1080,7 +1083,7 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
             next_analysis_frame: other.next_analysis_frame,
             completed_segments: other.completed_segments.clone(),
             time_started: Instant::now() - Duration::from_secs(other.elapsed_time),
-            segment_idx: 0,
+            segment_idx: other.segment_idx,
             encoding_stats: (
                 (&other.encoding_stats.0).into(),
                 (&other.encoding_stats.1).into(),
