@@ -24,6 +24,7 @@ use std::io::Write;
 use std::io::{stdin, Read};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 use std::{env, fmt};
 use systemstat::{ByteSize, Platform, System};
 
@@ -32,7 +33,11 @@ use systemstat::{ByteSize, Platform, System};
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 lazy_static! {
-    static ref CLIENT: reqwest::blocking::Client = reqwest::blocking::Client::new();
+    static ref CLIENT: reqwest::blocking::Client = reqwest::blocking::ClientBuilder::new()
+        .timeout(None)
+        .connect_timeout(Duration::from_secs(10))
+        .build()
+        .unwrap();
 }
 
 fn main() -> Result<()> {
