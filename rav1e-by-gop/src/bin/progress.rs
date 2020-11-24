@@ -195,9 +195,9 @@ fn update_progress(
                 pb.set_position(0);
                 pb.set_length(0);
                 pb.set_length(progress.total_frames as u64);
-                overall_progress
-                    .keyframes
-                    .insert(progress.keyframes.iter().next().copied().unwrap());
+                if let Some(keyframe) = progress.keyframes.iter().next().copied() {
+                    overall_progress.keyframes.insert(keyframe);
+                }
                 overall_progress.next_analysis_frame = cmp::max(
                     overall_progress.next_analysis_frame,
                     progress.next_analysis_frame,
