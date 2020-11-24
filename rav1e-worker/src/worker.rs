@@ -30,76 +30,59 @@ pub async fn start_workers(worker_threads: usize) {
         loop {
             delay_for(Duration::from_secs(3)).await;
 
-            let mut items_to_remove = Vec::new();
-
-            {
-                let reader = ENCODER_QUEUE.read();
-                let mut in_progress_items = 0;
-                for item in reader.values() {
-                    match item.read().state {
-                        EncodeState::Enqueued => (),
-                        _ => {
-                            in_progress_items += 1;
-                        }
-                    }
-                }
-                if in_progress_items >= worker_threads {
-                    continue;
-                }
-
-                for (&request_id, item) in reader.iter() {
-                    let mut item_handle = item.write();
-                    match item_handle.state {
-                        EncodeState::Enqueued if in_progress_items < worker_threads => {
-                            info!("A slot is ready for request {}", request_id);
-                            item_handle.state = EncodeState::AwaitingInfo {
-                                time_ready: Utc::now(),
-                            };
-                            in_progress_items += 1;
-                        }
-                        EncodeState::AwaitingInfo { time_ready }
-                        | EncodeState::AwaitingData { time_ready, .. } => {
-                            if time_ready < Utc::now() - chrono::Duration::minutes(15) {
-                                items_to_remove.push(request_id);
-                            }
-                        }
-                        EncodeState::Ready { ref raw_frames, .. } => {
-                            info!("Beginning encode for request {}", request_id);
-                            let video_info = item_handle.video_info;
-                            let options = item_handle.options;
-                            let raw_frames = raw_frames.clone();
-                            let pool_handle = rayon_pool.clone();
-                            tokio::spawn(async move {
-                                if video_info.bit_depth <= 8 {
-                                    encode_segment::<u8>(
-                                        request_id,
-                                        video_info,
-                                        options,
-                                        raw_frames,
-                                        pool_handle,
-                                    )
-                                    .await;
-                                } else {
-                                    encode_segment::<u16>(
-                                        request_id,
-                                        video_info,
-                                        options,
-                                        raw_frames,
-                                        pool_handle,
-                                    )
-                                    .await;
-                                }
-                            });
-                        }
-                        _ => (),
+            let reader = ENCODER_QUEUE.read();
+            let mut in_progress_items = 0;
+            for item in reader.values() {
+                match item.read().state {
+                    EncodeState::Enqueued => (),
+                    _ => {
+                        in_progress_items += 1;
                     }
                 }
             }
+            if in_progress_items >= worker_threads {
+                continue;
+            }
 
-            if !items_to_remove.is_empty() {
-                let mut queue_handle = ENCODER_QUEUE.write();
-                for request_id in items_to_remove {
-                    queue_handle.remove(&request_id);
+            for (&request_id, item) in reader.iter() {
+                let mut item_handle = item.write();
+                match item_handle.state {
+                    EncodeState::Enqueued if in_progress_items < worker_threads => {
+                        info!("A slot is ready for request {}", request_id);
+                        item_handle.state = EncodeState::AwaitingInfo {
+                            time_ready: Utc::now(),
+                        };
+                        in_progress_items += 1;
+                    }
+                    EncodeState::Ready { ref raw_frames, .. } => {
+                        info!("Beginning encode for request {}", request_id);
+                        let video_info = item_handle.video_info;
+                        let options = item_handle.options;
+                        let raw_frames = raw_frames.clone();
+                        let pool_handle = rayon_pool.clone();
+                        tokio::spawn(async move {
+                            if video_info.bit_depth <= 8 {
+                                encode_segment::<u8>(
+                                    request_id,
+                                    video_info,
+                                    options,
+                                    raw_frames,
+                                    pool_handle,
+                                )
+                                .await;
+                            } else {
+                                encode_segment::<u16>(
+                                    request_id,
+                                    video_info,
+                                    options,
+                                    raw_frames,
+                                    pool_handle,
+                                )
+                                .await;
+                            }
+                        });
+                    }
+                    _ => (),
                 }
             }
         }
