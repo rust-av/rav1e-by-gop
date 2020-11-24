@@ -37,7 +37,7 @@ pub(crate) fn discover_remote_worker(worker: &WorkerConfig) -> Result<RemoteWork
 
     debug!("Initial query to remote worker {}", url);
     let resp: GetInfoResponse = CLIENT
-        .get(&format!("{}{}", url, "/info"))
+        .get(&format!("{}{}", url, "info"))
         .header("X-RAV1E-AUTH", &worker.password)
         .send()?
         .json()?;
@@ -59,7 +59,7 @@ pub(crate) fn wait_for_slot_allocation<T: Pixel + DeserializeOwned + Default>(
         if let Ok(response) = CLIENT
             .get(&format!(
                 "{}{}/{}",
-                &connection.worker_uri, "/enqueue", connection.request_id
+                &connection.worker_uri, "enqueue", connection.request_id
             ))
             .header("X-RAV1E-AUTH", &connection.worker_password)
             .send()
@@ -97,7 +97,7 @@ pub(crate) fn remote_encode_segment<T: Pixel + DeserializeOwned + Default>(
         match CLIENT
             .get(&format!(
                 "{}{}/{}",
-                &connection.worker_uri, "/segment", connection.request_id
+                &connection.worker_uri, "segment", connection.request_id
             ))
             .header("X-RAV1E-AUTH", &connection.worker_password)
             .send()
@@ -115,7 +115,7 @@ pub(crate) fn remote_encode_segment<T: Pixel + DeserializeOwned + Default>(
                         match CLIENT
                             .get(&format!(
                                 "{}{}/{}",
-                                &connection.worker_uri, "/segment_data", connection.request_id
+                                &connection.worker_uri, "segment_data", connection.request_id
                             ))
                             .header("X-RAV1E-AUTH", &connection.worker_password)
                             .send()

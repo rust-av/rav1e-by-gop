@@ -386,7 +386,7 @@ pub(crate) fn run_first_pass<
                                 )))
                                 .unwrap();
                             while let Err(e) = CLIENT
-                                .post(&format!("{}{}/{}", &connection.worker_uri, "/segment_data", connection.request_id))
+                                .post(&format!("{}{}/{}", &connection.worker_uri, "segment_data", connection.request_id))
                                 .header("X-RAV1E-AUTH", &connection.worker_password)
                                 .body(bincode::serialize(&processed_frames).unwrap())
                                 .send()
@@ -487,7 +487,7 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
             if let SlotStatus::Empty = worker.slot_status {
                 debug!("Empty connection--requesting new slot");
                 match CLIENT
-                    .post(&format!("{}{}", &worker.uri, "/enqueue"))
+                    .post(&format!("{}{}", &worker.uri, "enqueue"))
                     .header("X-RAV1E-AUTH", &worker.password)
                     .json(&SlotRequestMessage {
                         options: EncodeOptions {
