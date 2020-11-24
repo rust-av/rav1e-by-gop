@@ -385,7 +385,7 @@ pub(crate) fn run_first_pass<
                                         .sum(),
                                 )))
                                 .unwrap();
-                            while CLIENT
+                            while let Err(e) = CLIENT
                                 .post(&format!("{}{}/{}", &connection.worker_uri, "segment", connection.request_id))
                                 .header("X-RAV1E-AUTH", &connection.worker_password)
                                 .json(&PostSegmentMessage {
@@ -394,15 +394,17 @@ pub(crate) fn run_first_pass<
                                     next_analysis_frame: analysis_frameno - 1
                                 })
                                 .send()
-                                .and_then(|res| res.error_for_status()).is_err() {
+                                .and_then(|res| res.error_for_status()) {
+                                    error!("Error while sending segment info: {}", e);
                                     sleep(Duration::from_secs(5));
                             }
-                            while CLIENT
+                            while let Err(e) = CLIENT
                                 .post(&format!("{}{}/{}", &connection.worker_uri, "segment_data", connection.request_id))
                                 .header("X-RAV1E-AUTH", &connection.worker_password)
                                 .body(bincode::serialize(&processed_frames).unwrap())
                                 .send()
-                                .and_then(|res| res.error_for_status()).is_err() {
+                                .and_then(|res| res.error_for_status()) {
+                                    error!("Error while sending segment data: {}", e);
                                     sleep(Duration::from_secs(5));
                             }
                             connection
