@@ -22,10 +22,19 @@ pub struct GetProgressResponse {
 
 pub enum EncodeState {
     Enqueued,
+    AwaitingInfo {
+        time_ready: DateTime<Utc>,
+    },
     AwaitingData {
+        keyframe_number: usize,
+        segment_idx: usize,
+        next_analysis_frame: usize,
         time_ready: DateTime<Utc>,
     },
     Ready {
+        keyframe_number: usize,
+        segment_idx: usize,
+        next_analysis_frame: usize,
         raw_frames: Arc<SegmentFrameData>,
     },
     InProgress {

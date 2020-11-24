@@ -17,3 +17,10 @@ pub struct SlotRequestMessage {
     pub video_info: VideoDetails,
     pub client_version: semver::Version,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostSegmentMessage {
+    pub keyframe_number: usize,
+    pub segment_idx: usize,
+    pub next_analysis_frame: usize,
+}

@@ -49,12 +49,12 @@ pub async fn start_workers(worker_threads: usize) {
                 match item_handle.state {
                     EncodeState::Enqueued if in_progress_items < worker_threads => {
                         info!("A slot is ready for request {}", request_id);
-                        item_handle.state = EncodeState::AwaitingData {
+                        item_handle.state = EncodeState::AwaitingInfo {
                             time_ready: Utc::now(),
                         };
                         in_progress_items += 1;
                     }
-                    EncodeState::Ready { ref raw_frames } => {
+                    EncodeState::Ready { ref raw_frames, .. } => {
                         info!("Beginning encode for request {}", request_id);
                         let video_info = item_handle.video_info;
                         let options = item_handle.options;
@@ -106,9 +106,27 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
                     SegmentFrameData::CompressedFrames(frames) => frames.len(),
                     SegmentFrameData::Y4MFile { frame_count, .. } => *frame_count,
                 },
-                BTreeSet::new(),
-                0,
-                0,
+                {
+                    let mut keyframes = BTreeSet::new();
+                    keyframes.insert(match item_handle.state {
+                        EncodeState::Ready {
+                            keyframe_number, ..
+                        } => keyframe_number,
+                        _ => unreachable!(),
+                    });
+                    keyframes
+                },
+                match item_handle.state {
+                    EncodeState::Ready { segment_idx, .. } => segment_idx,
+                    _ => unreachable!(),
+                },
+                match item_handle.state {
+                    EncodeState::Ready {
+                        next_analysis_frame,
+                        ..
+                    } => next_analysis_frame,
+                    _ => unreachable!(),
+                },
                 None,
             ),
         };

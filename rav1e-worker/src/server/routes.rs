@@ -5,11 +5,13 @@ use crate::server::CLIENT_VERSION_REQUIRED;
 use crate::{try_or_500, EncodeItem, ENCODER_QUEUE, UUID_CONTEXT, UUID_NODE_ID};
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
+use chrono::Utc;
 use http::header::{HeaderValue, CONTENT_TYPE};
 use rav1e::prelude::Rational;
 use rav1e_by_gop::{
     decompress_frame, EncodeState, GetInfoResponse, GetProgressResponse, PostEnqueueResponse,
-    ProgressInfo, SegmentFrameData, SerializableProgressInfo, SlotRequestMessage,
+    PostSegmentMessage, ProgressInfo, SegmentFrameData, SerializableProgressInfo,
+    SlotRequestMessage,
 };
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -41,6 +43,11 @@ pub fn get_routes(
             .and(require_auth())
             .and(json_body())
             .and_then(post_enqueue))
+        .or(warp::path!("segment" / Uuid)
+            .and(warp::post())
+            .and(require_auth())
+            .and(json_body())
+            .and_then(post_segment))
         .or(warp::path!("segment_data" / Uuid)
             .and(warp::post())
             .and(require_auth())
@@ -114,6 +121,41 @@ async fn post_enqueue(_auth: (), body: SlotRequestMessage) -> Result<impl Reply,
     ))
 }
 
+async fn post_segment(
+    request_id: Uuid,
+    _auth: (),
+    body: PostSegmentMessage,
+) -> Result<impl Reply, Rejection> {
+    let queue_handle = ENCODER_QUEUE.read().await;
+    if let Some(item) = queue_handle.get(&request_id) {
+        let mut item_handle = item.write().await;
+        match item_handle.state {
+            EncodeState::AwaitingInfo { .. } => (),
+            _ => {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&()),
+                    StatusCode::GONE,
+                ));
+            }
+        };
+        item_handle.state = EncodeState::AwaitingData {
+            keyframe_number: body.keyframe_number,
+            segment_idx: body.segment_idx,
+            next_analysis_frame: body.next_analysis_frame,
+            time_ready: Utc::now(),
+        };
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&()),
+            StatusCode::OK,
+        ));
+    }
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&()),
+        StatusCode::NOT_FOUND,
+    ))
+}
+
 // client sends raw video data via this endpoint
 async fn post_segment_data(
     request_id: Uuid,
@@ -125,7 +167,19 @@ async fn post_segment_data(
     if let Some(item) = queue_handle.get(&request_id) {
         let mut item_handle = item.write().await;
         let frame_data;
-        if let EncodeState::AwaitingData { .. } = &mut item_handle.state {
+        let keyframe_number_outer;
+        let next_analysis_frame_outer;
+        let segment_idx_outer;
+        if let EncodeState::AwaitingData {
+            keyframe_number,
+            next_analysis_frame,
+            segment_idx,
+            ..
+        } = &mut item_handle.state
+        {
+            keyframe_number_outer = *keyframe_number;
+            next_analysis_frame_outer = *next_analysis_frame;
+            segment_idx_outer = *segment_idx;
             let compressed_frames: Vec<Vec<u8>> = try_or_500!(bincode::deserialize(&body));
             frame_data = match temp_dir {
                 Some(temp_dir) => {
@@ -161,6 +215,9 @@ async fn post_segment_data(
             ));
         }
         item_handle.state = EncodeState::Ready {
+            keyframe_number: keyframe_number_outer,
+            next_analysis_frame: next_analysis_frame_outer,
+            segment_idx: segment_idx_outer,
             raw_frames: Arc::new(frame_data),
         };
         return Ok(warp::reply::with_status(

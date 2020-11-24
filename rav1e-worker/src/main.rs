@@ -55,8 +55,9 @@ impl std::fmt::Debug for EncodeItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.state {
             EncodeState::Enqueued => f.write_str("Enqueued"),
+            EncodeState::AwaitingInfo { .. } => f.write_str("Awaiting Segment Info"),
             EncodeState::AwaitingData { .. } => f.write_str("Awaiting Data"),
-            EncodeState::Ready { ref raw_frames } => f.write_fmt(format_args!(
+            EncodeState::Ready { ref raw_frames, .. } => f.write_fmt(format_args!(
                 "Ready to encode {} frames",
                 raw_frames.frame_count()
             )),

@@ -386,6 +386,23 @@ pub(crate) fn run_first_pass<
                                 )))
                                 .unwrap();
                             while let Err(e) = CLIENT
+                                .post(&format!("{}{}/{}", &connection.worker_uri, "segment", connection.request_id))
+                                .header("X-RAV1E-AUTH", &connection.worker_password)
+                                .json(&PostSegmentMessage {
+                                    keyframe_number: start_frameno,
+                                    segment_idx: segment_no,
+                                    next_analysis_frame: analysis_frameno - 1
+                                })
+                                .send()
+                                .and_then(|res| res.error_for_status()) {
+                                    error!(
+                                        "Failed to send frames to connection {}: {}",
+                                        connection.request_id,
+                                        e
+                                    );
+                                    sleep(Duration::from_secs(5));
+                            }
+                            while let Err(e) = CLIENT
                                 .post(&format!("{}{}/{}", &connection.worker_uri, "segment_data", connection.request_id))
                                 .header("X-RAV1E-AUTH", &connection.worker_password)
                                 .body(bincode::serialize(&processed_frames).unwrap())
