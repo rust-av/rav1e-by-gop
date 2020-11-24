@@ -45,36 +45,42 @@ pub async fn start_workers(worker_threads: usize) {
             }
 
             for (&request_id, item) in reader.iter() {
-                let mut item_writer = item.write().await;
-                match item_writer.state {
+                let mut item_handle = item.write().await;
+                match item_handle.state {
                     EncodeState::Enqueued if in_progress_items < worker_threads => {
                         info!("A slot is ready for request {}", request_id);
-                        item_writer.state = EncodeState::AwaitingData {
+                        item_handle.state = EncodeState::AwaitingData {
                             time_ready: Utc::now(),
                         };
                         in_progress_items += 1;
                     }
                     EncodeState::Ready { ref raw_frames } => {
                         info!("Beginning encode for request {}", request_id);
-                        if item_writer.video_info.bit_depth <= 8 {
-                            encode_segment::<u8>(
-                                request_id,
-                                item_writer.video_info,
-                                item_writer.options,
-                                raw_frames.clone(),
-                                rayon_pool.clone(),
-                            )
-                            .await;
-                        } else {
-                            encode_segment::<u16>(
-                                request_id,
-                                item_writer.video_info,
-                                item_writer.options,
-                                raw_frames.clone(),
-                                rayon_pool.clone(),
-                            )
-                            .await;
-                        }
+                        let video_info = item_handle.video_info;
+                        let options = item_handle.options;
+                        let raw_frames = raw_frames.clone();
+                        let pool_handle = rayon_pool.clone();
+                        tokio::spawn(async move {
+                            if video_info.bit_depth <= 8 {
+                                encode_segment::<u8>(
+                                    request_id,
+                                    video_info,
+                                    options,
+                                    raw_frames,
+                                    pool_handle,
+                                )
+                                .await;
+                            } else {
+                                encode_segment::<u16>(
+                                    request_id,
+                                    video_info,
+                                    options,
+                                    raw_frames,
+                                    pool_handle,
+                                )
+                                .await;
+                            }
+                        });
                     }
                     _ => (),
                 }
@@ -90,21 +96,23 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     input: Arc<SegmentFrameData>,
     pool: Arc<rayon::ThreadPool>,
 ) {
-    let queue_reader = ENCODER_QUEUE.read().await;
-    let mut item_writer = queue_reader.get(&request_id).unwrap().write().await;
-    item_writer.state = EncodeState::InProgress {
-        progress: ProgressInfo::new(
-            Rational::from_reciprocal(item_writer.video_info.time_base),
-            match input.as_ref() {
-                SegmentFrameData::CompressedFrames(frames) => frames.len(),
-                SegmentFrameData::Y4MFile { frame_count, .. } => *frame_count,
-            },
-            BTreeSet::new(),
-            0,
-            0,
-            None,
-        ),
-    };
+    {
+        let queue_handle = ENCODER_QUEUE.read().await;
+        let mut item_handle = queue_handle.get(&request_id).unwrap().write().await;
+        item_handle.state = EncodeState::InProgress {
+            progress: ProgressInfo::new(
+                Rational::from_reciprocal(item_handle.video_info.time_base),
+                match input.as_ref() {
+                    SegmentFrameData::CompressedFrames(frames) => frames.len(),
+                    SegmentFrameData::Y4MFile { frame_count, .. } => *frame_count,
+                },
+                BTreeSet::new(),
+                0,
+                0,
+                None,
+            ),
+        };
+    }
 
     let mut source = Source {
         frame_data: match Arc::try_unwrap(input) {
@@ -154,9 +162,9 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
                     packet.data.as_ref(),
                     packet.frame_type,
                 );
-                let queue_reader = ENCODER_QUEUE.read().await;
-                let mut item_writer = queue_reader.get(&request_id).unwrap().write().await;
-                if let EncodeState::InProgress { ref mut progress } = item_writer.state {
+                let queue_handle = ENCODER_QUEUE.read().await;
+                let mut item_handle = queue_handle.get(&request_id).unwrap().write().await;
+                if let EncodeState::InProgress { ref mut progress } = item_handle.state {
                     output.write_frame(
                         packet.input_frameno as u64,
                         packet.data.as_ref(),
@@ -181,17 +189,19 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
         };
     }
 
-    let queue_reader = ENCODER_QUEUE.read().await;
-    let mut item_writer = queue_reader.get(&request_id).unwrap().write().await;
-    item_writer.state = if let EncodeState::InProgress { ref progress } = item_writer.state {
-        EncodeState::EncodingDone {
-            progress: progress.clone(),
-            encoded_data: output.output,
-            time_finished: Utc::now(),
-        }
-    } else {
-        unreachable!()
-    };
+    {
+        let queue_handle = ENCODER_QUEUE.read().await;
+        let mut item_handle = queue_handle.get(&request_id).unwrap().write().await;
+        item_handle.state = if let EncodeState::InProgress { ref progress } = item_handle.state {
+            EncodeState::EncodingDone {
+                progress: progress.clone(),
+                encoded_data: output.output,
+                time_finished: Utc::now(),
+            }
+        } else {
+            unreachable!()
+        };
+    }
     if let SourceFrameData::Y4MFile { path, .. } = source.frame_data {
         let _ = fs::remove_file(path);
     };

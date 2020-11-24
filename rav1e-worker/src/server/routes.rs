@@ -119,11 +119,11 @@ async fn post_segment_data(
     body: Bytes,
     temp_dir: Option<PathBuf>,
 ) -> Result<impl Reply, Rejection> {
-    let reader = ENCODER_QUEUE.read().await;
-    if let Some(item) = reader.get(&request_id) {
-        let mut item_writer = item.write().await;
+    let queue_handle = ENCODER_QUEUE.read().await;
+    if let Some(item) = queue_handle.get(&request_id) {
+        let mut item_handle = item.write().await;
         let frame_data;
-        if let EncodeState::AwaitingData { .. } = &mut item_writer.state {
+        if let EncodeState::AwaitingData { .. } = &mut item_handle.state {
             let compressed_frames: Vec<Vec<u8>> = try_or_500!(bincode::deserialize(&body));
             frame_data = match temp_dir {
                 Some(temp_dir) => {
@@ -134,7 +134,7 @@ async fn post_segment_data(
                     let file = File::create(&temp_path).unwrap();
                     let mut writer = BufWriter::new(file);
                     for frame in compressed_frames {
-                        let frame_data = if item_writer.video_info.bit_depth == 8 {
+                        let frame_data = if item_handle.video_info.bit_depth == 8 {
                             bincode::serialize(&decompress_frame::<u8>(&frame)).unwrap()
                         } else {
                             bincode::serialize(&decompress_frame::<u16>(&frame)).unwrap()
@@ -158,7 +158,7 @@ async fn post_segment_data(
                 StatusCode::NOT_FOUND,
             ));
         }
-        item_writer.state = EncodeState::Ready {
+        item_handle.state = EncodeState::Ready {
             raw_frames: Arc::new(frame_data),
         };
         return Ok(warp::reply::with_status(
