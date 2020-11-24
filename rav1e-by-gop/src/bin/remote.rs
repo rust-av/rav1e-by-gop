@@ -94,7 +94,7 @@ pub(crate) fn remote_encode_segment<T: Pixel + DeserializeOwned + Default>(
     connection: ActiveConnection,
 ) {
     loop {
-        match CLIENT
+        if let Ok(response) = CLIENT
             .get(&format!(
                 "{}{}/{}",
                 &connection.worker_uri, "segment", connection.request_id
@@ -104,54 +104,45 @@ pub(crate) fn remote_encode_segment<T: Pixel + DeserializeOwned + Default>(
             .and_then(|res| res.error_for_status())
             .and_then(|res| res.json::<GetProgressResponse>())
         {
-            Ok(response) => {
-                let _ = connection
-                    .progress_sender
-                    .send(ProgressStatus::Encoding(Box::new(
-                        (&response.progress).into(),
-                    )));
-                if response.done {
-                    loop {
-                        match CLIENT
-                            .get(&format!(
-                                "{}{}/{}",
-                                &connection.worker_uri, "segment_data", connection.request_id
-                            ))
-                            .header("X-RAV1E-AUTH", &connection.worker_password)
-                            .send()
-                            .and_then(|res| res.error_for_status())
-                        {
-                            Ok(response) => {
-                                let mut output: Box<dyn Write> =
-                                    match connection.encode_info.unwrap().output_file {
-                                        Output::File(filename) => {
-                                            Box::new(File::create(filename).unwrap())
-                                        }
-                                        Output::Null => Box::new(sink()),
-                                        Output::Memory => unreachable!(),
-                                    };
-                                output.write_all(&response.bytes().unwrap()).unwrap();
-                                output.flush().unwrap();
-                                break;
-                            }
-                            Err(e) => {
-                                error!("Failed to get encode from remote server: {}", e);
-                                sleep(Duration::from_secs(5));
-                            }
-                        };
-                    }
-                    break;
+            let _ = connection
+                .progress_sender
+                .send(ProgressStatus::Encoding(Box::new(
+                    (&response.progress).into(),
+                )));
+            if response.done {
+                loop {
+                    match CLIENT
+                        .get(&format!(
+                            "{}{}/{}",
+                            &connection.worker_uri, "segment_data", connection.request_id
+                        ))
+                        .header("X-RAV1E-AUTH", &connection.worker_password)
+                        .send()
+                        .and_then(|res| res.error_for_status())
+                    {
+                        Ok(response) => {
+                            let mut output: Box<dyn Write> =
+                                match connection.encode_info.unwrap().output_file {
+                                    Output::File(filename) => {
+                                        Box::new(File::create(filename).unwrap())
+                                    }
+                                    Output::Null => Box::new(sink()),
+                                    Output::Memory => unreachable!(),
+                                };
+                            output.write_all(&response.bytes().unwrap()).unwrap();
+                            output.flush().unwrap();
+                            break;
+                        }
+                        Err(e) => {
+                            error!("Failed to get encode from remote server: {}", e);
+                            sleep(Duration::from_secs(5));
+                        }
+                    };
                 }
-                sleep(Duration::from_secs(2));
-            }
-            Err(e) => {
-                error!(
-                    "Error getting progress update from remote worker {}: {}",
-                    connection.worker_uri, e
-                );
-                sleep(Duration::from_secs(5));
+                break;
             }
         }
+        sleep(Duration::from_secs(2));
     }
 
     connection

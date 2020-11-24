@@ -7,13 +7,10 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
 use chrono::Utc;
 use http::header::{HeaderValue, CONTENT_TYPE};
-use rav1e::prelude::Rational;
 use rav1e_by_gop::{
     decompress_frame, EncodeState, GetInfoResponse, GetProgressResponse, PostEnqueueResponse,
-    PostSegmentMessage, ProgressInfo, SegmentFrameData, SerializableProgressInfo,
-    SlotRequestMessage,
+    PostSegmentMessage, SegmentFrameData, SerializableProgressInfo, SlotRequestMessage,
 };
-use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -238,20 +235,6 @@ async fn get_segment(request_id: Uuid, _auth: ()) -> Result<impl Reply, Rejectio
     if let Some(item) = reader.get(&request_id) {
         let item_reader = item.read().await;
         match item_reader.state {
-            EncodeState::Ready { ref raw_frames, .. } => Ok(warp::reply::with_status(
-                warp::reply::json(&GetProgressResponse {
-                    progress: SerializableProgressInfo::from(&ProgressInfo::new(
-                        Rational::from_reciprocal(item_reader.video_info.time_base),
-                        raw_frames.frame_count(),
-                        BTreeSet::new(),
-                        0,
-                        0,
-                        None,
-                    )),
-                    done: false,
-                }),
-                StatusCode::OK,
-            )),
             EncodeState::InProgress { ref progress, .. } => Ok(warp::reply::with_status(
                 warp::reply::json(&GetProgressResponse {
                     progress: SerializableProgressInfo::from(&*progress),
