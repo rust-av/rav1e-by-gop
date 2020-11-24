@@ -1,5 +1,6 @@
 use clap::{App, Arg};
 use lazy_static::lazy_static;
+use log::{debug, log_enabled};
 use rand::Rng;
 use rav1e_by_gop::{EncodeOptions, EncodeState, VideoDetails};
 use server::*;
@@ -144,6 +145,14 @@ async fn main() {
 
     loop {
         // Run the main thread forever until terminated
-        delay_for(Duration::from_secs(60)).await;
+        if log_enabled!(log::Level::Debug) {
+            let queue_handle = ENCODER_QUEUE.read().await;
+            let mut items = Vec::with_capacity(queue_handle.len());
+            for (key, item) in queue_handle.iter() {
+                items.push((key, item.read().await));
+            }
+            debug!("Items in queue: {:?}", items);
+        }
+        delay_for(Duration::from_secs(5)).await;
     }
 }
