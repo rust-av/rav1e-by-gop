@@ -186,14 +186,13 @@ fn update_progress(
 
     match progress {
         ProgressStatus::Encoding(progress) => {
-            if progress.frame_info.is_empty() {
+            if pb.length() == 0 {
                 debug!("Updating progress--new segment starting");
                 pb.set_message("");
                 pb.set_style(progress_active_style());
                 pb.set_prefix(&segment_prefix(progress.segment_idx).to_string());
                 pb.reset_elapsed();
                 pb.set_position(0);
-                pb.set_length(0);
                 pb.set_length(progress.total_frames as u64);
                 if let Some(keyframe) = progress.keyframes.iter().next().copied() {
                     overall_progress.keyframes.insert(keyframe);

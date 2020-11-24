@@ -390,7 +390,7 @@ pub(crate) fn run_first_pass<
                                 .header("X-RAV1E-AUTH", &connection.worker_password)
                                 .json(&PostSegmentMessage {
                                     keyframe_number: start_frameno,
-                                    segment_idx: segment_no,
+                                    segment_idx: segment_no + 1,
                                     next_analysis_frame: analysis_frameno - 1
                                 })
                                 .send()
