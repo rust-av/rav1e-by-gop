@@ -67,6 +67,15 @@ pub enum SegmentFrameData {
     Y4MFile { path: PathBuf, frame_count: usize },
 }
 
+impl SegmentFrameData {
+    pub fn frame_count(&self) -> usize {
+        match self {
+            SegmentFrameData::CompressedFrames(frames) => frames.len(),
+            SegmentFrameData::Y4MFile { frame_count, .. } => *frame_count,
+        }
+    }
+}
+
 pub struct ActiveConnection {
     pub worker_uri: Url,
     pub worker_password: String,

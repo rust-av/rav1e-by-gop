@@ -51,6 +51,27 @@ impl EncodeItem {
     }
 }
 
+impl std::fmt::Debug for EncodeItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.state {
+            EncodeState::Enqueued => f.write_str("Enqueued"),
+            EncodeState::AwaitingData { .. } => f.write_str("Awaiting Data"),
+            EncodeState::Ready { ref raw_frames } => f.write_fmt(format_args!(
+                "Ready to encode {} frames",
+                raw_frames.frame_count()
+            )),
+            EncodeState::InProgress { ref progress } => f.write_fmt(format_args!(
+                "Encoding {} of {} frames",
+                progress.frame_info.len(),
+                progress.total_frames
+            )),
+            EncodeState::EncodingDone {
+                ref encoded_data, ..
+            } => f.write_fmt(format_args!("Done encoding {} bytes", encoded_data.len())),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     env::var("SERVER_PASSWORD").expect("SERVER_PASSWORD env var MUST be set!");
