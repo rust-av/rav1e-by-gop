@@ -24,10 +24,12 @@ use std::fs::remove_file;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
-use std::{cmp, thread};
 use threadpool::ThreadPool;
 use y4m::Decoder;
 
@@ -182,6 +184,7 @@ pub fn perform_encode_inner<
     let remote_slots_ref = remote_slots.clone();
     let input_finished_receiver = input_finished_channel.1.clone();
     let max_frames = opts.max_frames;
+    let num_segments = Arc::new(AtomicUsize::new(0));
     s.spawn(move |_| {
         watch_progress_receivers(
             receivers,
@@ -212,6 +215,7 @@ pub fn perform_encode_inner<
         .cloned()
         .collect::<Vec<_>>();
     let rayon_handle = rayon_pool.clone();
+    let num_segments_handle = num_segments.clone();
     s.spawn(move |s| {
         run_first_pass::<T, R>(
             dec,
@@ -230,6 +234,7 @@ pub fn perform_encode_inner<
             skipped_segments,
             video_info,
             s,
+            num_segments_handle,
         );
     });
 
@@ -267,12 +272,10 @@ pub fn perform_encode_inner<
         )
     });
 
-    let mut num_segments = 0;
     if num_threads > 0 {
         let _ = listen_for_local_workers::<T>(
             EncodeOptions::from(opts),
             &opts.output,
-            &mut num_segments,
             thread_pool.as_mut().unwrap(),
             rayon_pool,
             video_info,
@@ -284,7 +287,7 @@ pub fn perform_encode_inner<
     let _ = remote_listener.join();
 
     if let Output::File(output) = &opts.output {
-        mux_output_files(&output, num_segments)?;
+        mux_output_files(&output, num_segments.load(Ordering::SeqCst))?;
     };
 
     Ok(())
@@ -351,7 +354,6 @@ fn watch_worker_updates(
 fn listen_for_local_workers<T: Pixel>(
     encode_opts: EncodeOptions,
     output_file: &Output,
-    num_segments: &mut usize,
     thread_pool: &mut ThreadPool,
     rayon_pool: Arc<rayon::ThreadPool>,
     video_info: VideoDetails,
@@ -363,7 +365,6 @@ fn listen_for_local_workers<T: Pixel>(
             Ok(Some(data)) => {
                 let slot = data.slot;
                 let segment_idx = data.segment_no + 1;
-                *num_segments = cmp::max(*num_segments, segment_idx);
                 encode_segment(
                     encode_opts,
                     video_info,

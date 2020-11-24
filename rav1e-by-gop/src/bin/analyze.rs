@@ -16,6 +16,8 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
@@ -60,6 +62,7 @@ pub(crate) fn run_first_pass<
     skipped_segments: BTreeSet<usize>,
     video_info: VideoDetails,
     scope: &Scope,
+    num_segments: Arc<AtomicUsize>,
 ) {
     let sc_opts = DetectionOptions {
         fast_analysis: opts.speed >= 10,
@@ -152,6 +155,7 @@ pub(crate) fn run_first_pass<
                                 }
                             }
                             segment_no += 1;
+                            num_segments.fetch_add(1, Ordering::SeqCst);
                             continue;
                         } else {
                             processed_frames =
@@ -429,6 +433,7 @@ pub(crate) fn run_first_pass<
                     }
                 }
                 segment_no += 1;
+                num_segments.fetch_add(1, Ordering::SeqCst);
             }
         })
         .join()
