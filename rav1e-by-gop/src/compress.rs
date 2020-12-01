@@ -4,16 +4,12 @@
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::cmp;
 use v_frame::frame::Frame;
 use v_frame::pixel::Pixel;
 
 pub fn compress_frame<T: Pixel + Serialize>(frame: &Frame<T>) -> Vec<u8> {
     let mut compressed_frame = Vec::new();
     let mut encoder = zstd::Encoder::new(&mut compressed_frame, 0).unwrap();
-    encoder
-        .multithread(cmp::min(8, num_cpus::get() as u32))
-        .unwrap();
     bincode::serialize_into(&mut encoder, frame).unwrap();
     encoder.finish().unwrap();
     compressed_frame
