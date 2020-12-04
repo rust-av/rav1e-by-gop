@@ -161,14 +161,9 @@ pub fn perform_encode_inner<
     let num_local_slots = if num_threads == 0 {
         0
     } else {
-        let local_workers = opts.local_workers.unwrap_or_else(|| {
-            // workers tend to use about 56% of the available cpus
-            // tiles tend to use about the 40% of the available cpus
-            // letting rayon schedule the workload seems to deal with starvation
-            // reserve 1 thread for 4 parallel tiles
-
-            (num_threads - opts.tiles * 2 / 8).max(1)
-        });
+        let local_workers = opts
+            .local_workers
+            .unwrap_or_else(|| (num_threads / opts.tiles).max(1));
         info!(
             "Using {} encoder threads ({} local workers)",
             style(num_threads).cyan(),
