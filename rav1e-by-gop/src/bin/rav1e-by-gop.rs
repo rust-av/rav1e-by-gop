@@ -375,18 +375,15 @@ fn decide_thread_count(
     opts: &CliOptions,
     video_info: &VideoDetails,
     has_remote_workers: bool,
+    tiles: usize,
 ) -> usize {
     if !opts.use_local {
         return 0;
     }
 
-    // Limit to the number of logical CPUs.
-    let mut num_threads = num_cpus::get();
-    if let Some(max_threads) = opts.max_threads {
-        num_threads = cmp::min(num_threads, max_threads);
-    }
+    let mut num_threads = 0;
 
-    // Limit further based on available memory.
+    // Limit based on available memory.
     let sys = System::new();
     let sys_memory = sys.memory();
     if let Ok(sys_memory) = sys_memory {
@@ -415,17 +412,13 @@ fn decide_thread_count(
                     cmp::max(ByteSize::gb(2).as_u64(), sys_memory.total.as_u64() / 2),
                 );
                 let limit = cmp::max(ByteSize::gb(2).as_u64(), total.saturating_sub(unreserved));
-                num_threads = cmp::min(
-                    num_threads,
-                    cmp::max(
-                        1,
-                        // Having remote workers means input must continue
-                        // to be read and analyzed while local encodes
-                        // are happening. i.e. it's like having one extra thread.
-                        (limit / bytes_per_segment) as usize
-                            - if has_remote_workers { 1 } else { 0 },
-                    ),
-                );
+                num_threads = cmp::max(
+                    1,
+                    // Having remote workers means input must continue
+                    // to be read and analyzed while local encodes
+                    // are happening. i.e. it's like having one extra thread.
+                    (limit / bytes_per_segment) as usize - if has_remote_workers { 1 } else { 0 },
+                ) * tiles;
             }
             MemoryUsage::Heavy => {
                 // Uses 80% of memory, minimum 2GB,
@@ -436,19 +429,21 @@ fn decide_thread_count(
                     cmp::max(ByteSize::gb(1).as_u64(), sys_memory.total.as_u64() * 4 / 5),
                 );
                 let limit = cmp::max(ByteSize::gb(2).as_u64(), total.saturating_sub(unreserved));
-                num_threads = cmp::min(
-                    num_threads,
-                    cmp::max(
-                        1,
-                        (limit / bytes_per_segment) as usize
-                            - if has_remote_workers { 1 } else { 0 },
-                    ),
-                );
+                num_threads = cmp::max(
+                    1,
+                    (limit / bytes_per_segment) as usize - if has_remote_workers { 1 } else { 0 },
+                ) * tiles;
             }
             MemoryUsage::Unlimited => {
-                // do nothing
+                num_threads = num_cpus::get();
             }
         }
+    }
+
+    // Limit to the number of logical CPUs.
+    num_threads = cmp::min(num_cpus::get(), num_threads);
+    if let Some(max_threads) = opts.max_threads {
+        num_threads = cmp::min(num_threads, max_threads);
     }
 
     num_threads

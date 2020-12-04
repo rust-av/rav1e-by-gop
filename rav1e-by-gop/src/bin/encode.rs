@@ -111,7 +111,8 @@ pub fn perform_encode_inner<
         .map(|worker| worker.workers.len())
         .sum::<usize>();
 
-    let num_threads = decide_thread_count(opts, &video_info, !remote_workers.is_empty());
+    let num_threads =
+        decide_thread_count(opts, &video_info, !remote_workers.is_empty(), opts.tiles);
 
     if !remote_workers.is_empty() {
         info!(
