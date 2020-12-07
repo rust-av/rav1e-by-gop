@@ -82,7 +82,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "av-scenechange"
 version = "0.4.2"
-source = "git+https://github.com/rust-av/av-scenechange#13d4e34017e3d0998feb7ac882163356578c36a7"
+source = "git+https://github.com/rust-av/av-scenechange#03e201439d42bd84ca21f6e3744e365fbaa681fc"
 dependencies = [
  "rav1e",
  "serde",
