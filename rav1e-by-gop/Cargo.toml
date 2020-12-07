@@ -32,7 +32,7 @@ parking_lot = { version = "0.11", optional = true }
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm", "serialize", "unstable"] }
 rayon = "1.5"
 reqwest = { version = "0.10", features = ["blocking", "json"] }
-rmp-serde = { version = "0.14", optional = true }
+rmp-serde = { version = "0.15", optional = true }
 semver = { version = "0.11", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 systemstat = { git = "https://github.com/myfreeweb/systemstat" }
