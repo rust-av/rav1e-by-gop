@@ -31,16 +31,16 @@ num_cpus = { version = "1", optional = true }
 parking_lot = { version = "0.11", optional = true }
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm", "serialize", "unstable"] }
 rayon = "1.5"
-reqwest = { version = "0.10", features = ["blocking", "json"] }
+reqwest = { version = "0.10", features = ["blocking", "json"], optional = true }
 rmp-serde = { version = "0.15", optional = true }
-semver = { version = "0.11", features = ["serde"] }
+semver = { version = "0.11", features = ["serde"], optional = true }
 serde = { version = "1", features = ["derive"] }
 systemstat = { git = "https://github.com/myfreeweb/systemstat" }
 thiserror = { version = "1", optional = true }
 threadpool = "1"
 toml = { version = "0.5", optional = true }
-url = "2.2"
-uuid = { version = "0.8", features = ["serde"] }
+url = { version = "2.2", optional = true }
+uuid = { version = "0.8", features = ["serde"], optional = true }
 v_frame = { version = "0.1", features = ["serialize"] }
 y4m = { version = "0.7", optional = true }
 zstd = "0.5"
@@ -54,7 +54,7 @@ required-features = ["binary"]
 bench = false
 
 [features]
-default = ["binary"]
+default = ["binary", "remote"]
 binary = [
     "av-scenechange",
     "clap",
@@ -62,14 +62,13 @@ binary = [
     "crossbeam-utils",
     "dialoguer",
     "env_logger",
-    "http",
     "indicatif",
     "itertools",
-    "lazy_static",
     "num_cpus",
     "parking_lot",
     "rmp-serde",
     "thiserror",
-    "toml",
     "y4m"
 ]
+remote = ["http", "lazy_static", "reqwest", "semver", "toml", "url", "uuid"]
+

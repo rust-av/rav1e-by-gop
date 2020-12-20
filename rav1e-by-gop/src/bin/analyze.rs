@@ -1,7 +1,12 @@
 use crate::decode::{get_video_details, process_raw_frame, read_raw_frame, DecodeError};
-use crate::progress::{get_segment_input_filename, get_segment_output_filename};
+use crate::progress::get_segment_input_filename;
+#[cfg(feature = "remote")]
+use crate::progress::get_segment_output_filename;
+#[cfg(feature = "remote")]
 use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
-use crate::{compress_frame, CliOptions, CLIENT};
+#[cfg(feature = "remote")]
+use crate::CLIENT;
+use crate::{compress_frame, CliOptions};
 use av_scenechange::{new_detector, DetectionOptions};
 use byteorder::{LittleEndian, WriteBytesExt};
 use crossbeam_channel::{unbounded, Receiver, Sender};
@@ -21,6 +26,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
+#[cfg(feature = "remote")]
 use systemstat::ByteSize;
 use v_frame::frame::Frame;
 use v_frame::pixel::Pixel;
@@ -30,8 +36,11 @@ pub(crate) type AnalyzerSender = Sender<Option<SegmentData>>;
 pub(crate) type AnalyzerReceiver = Receiver<Option<SegmentData>>;
 pub(crate) type AnalyzerChannel = (AnalyzerSender, AnalyzerReceiver);
 
+#[cfg(feature = "remote")]
 pub(crate) type RemoteAnalyzerSender = Sender<ActiveConnection>;
+#[cfg(feature = "remote")]
 pub(crate) type RemoteAnalyzerReceiver = Receiver<ActiveConnection>;
+#[cfg(feature = "remote")]
 pub(crate) type RemoteAnalyzerChannel = (RemoteAnalyzerSender, RemoteAnalyzerReceiver);
 
 pub(crate) type InputFinishedSender = Sender<()>;
@@ -42,6 +51,7 @@ pub(crate) type SlotReadySender = Sender<Slot>;
 pub(crate) type SlotReadyReceiver = Receiver<Slot>;
 pub(crate) type SlotReadyChannel = (SlotReadySender, SlotReadyReceiver);
 
+#[cfg_attr(not(feature = "remote"), allow(unused_variables))]
 pub(crate) fn run_first_pass<
     T: Pixel + Serialize + DeserializeOwned + Default,
     R: 'static + Read + Send,
@@ -49,13 +59,13 @@ pub(crate) fn run_first_pass<
     mut dec: Decoder<R>,
     opts: CliOptions,
     sender: AnalyzerSender,
-    remote_sender: RemoteAnalyzerSender,
+    #[cfg(feature = "remote")] remote_sender: RemoteAnalyzerSender,
     progress_senders: Vec<ProgressSender>,
-    remote_progress_senders: Vec<ProgressSender>,
+    #[cfg(feature = "remote")] remote_progress_senders: Vec<ProgressSender>,
     input_finished_sender: InputFinishedSender,
     input_finished_receiver: InputFinishedReceiver,
     slot_pool: Arc<Mutex<Vec<bool>>>,
-    remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
+    #[cfg(feature = "remote")] remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     rayon_pool: Arc<rayon::ThreadPool>,
     next_frameno: usize,
     known_keyframes: BTreeSet<usize>,
@@ -85,15 +95,23 @@ pub(crate) fn run_first_pass<
     scope.spawn(move |s| {
         slot_checker_loop::<T>(
             pool_handle,
+            #[cfg(feature = "remote")]
             remote_pool,
             slot_ready_sender,
+            #[cfg(feature = "remote")]
             remote_progress_senders,
             input_finished_receiver,
+            #[cfg(feature = "remote")]
             s,
+            #[cfg(feature = "remote")]
             video_info,
+            #[cfg(feature = "remote")]
             speed,
+            #[cfg(feature = "remote")]
             qp,
+            #[cfg(feature = "remote")]
             max_bitrate,
+            #[cfg(feature = "remote")]
             tiles,
         );
     });
@@ -126,6 +144,7 @@ pub(crate) fn run_first_pass<
                 debug!("Received slot ready message");
                 match message {
                     Slot::Local(slot) => &progress_senders[slot],
+                    #[cfg(feature = "remote")]
                     Slot::Remote(ref conn) => &conn.progress_sender,
                 }
                 .send(ProgressStatus::Loading)
@@ -285,6 +304,7 @@ pub(crate) fn run_first_pass<
                                         pool_handle.lock()[slot] = false;
                                         progress_senders[slot].send(ProgressStatus::Idle).unwrap();
                                     }
+                                    #[cfg(feature = "remote")]
                                     Slot::Remote(connection) => {
                                         connection
                                             .progress_sender
@@ -377,6 +397,7 @@ pub(crate) fn run_first_pass<
                             }))
                             .unwrap();
                     }
+                    #[cfg(feature = "remote")]
                     Slot::Remote(mut connection) => {
                         debug!("Encoding with remote slot");
                         let output = opts.output.clone();
@@ -448,6 +469,7 @@ pub(crate) fn run_first_pass<
             Slot::Local(slot) => {
                 slot_pool.lock()[slot] = false;
             }
+            #[cfg(feature = "remote")]
             Slot::Remote(connection) => {
                 connection
                     .worker_update_sender
@@ -463,16 +485,16 @@ pub(crate) fn run_first_pass<
 
 fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
     pool: Arc<Mutex<Vec<bool>>>,
-    remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
+    #[cfg(feature = "remote")] remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     slot_ready_sender: SlotReadySender,
-    remote_progress_senders: Vec<ProgressSender>,
+    #[cfg(feature = "remote")] remote_progress_senders: Vec<ProgressSender>,
     input_finished_receiver: InputFinishedReceiver,
-    scope: &Scope,
-    video_info: VideoDetails,
-    speed: usize,
-    qp: usize,
-    max_bitrate: Option<i32>,
-    tiles: usize,
+    #[cfg(feature = "remote")] scope: &Scope,
+    #[cfg(feature = "remote")] video_info: VideoDetails,
+    #[cfg(feature = "remote")] speed: usize,
+    #[cfg(feature = "remote")] qp: usize,
+    #[cfg(feature = "remote")] max_bitrate: Option<i32>,
+    #[cfg(feature = "remote")] tiles: usize,
 ) {
     loop {
         if input_finished_receiver.is_full() {
@@ -494,56 +516,60 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
             }
         }
 
-        let mut worker_start_idx = 0;
-        for worker in remote_pool.lock().iter_mut() {
-            if worker.workers.iter().all(|worker| *worker) {
-                worker_start_idx += worker.workers.len();
-                continue;
-            }
-            if let SlotStatus::Empty = worker.slot_status {
-                debug!("Empty connection--requesting new slot");
-                match CLIENT
-                    .post(&format!("{}{}", &worker.uri, "enqueue"))
-                    .header("X-RAV1E-AUTH", &worker.password)
-                    .json(&SlotRequestMessage {
-                        options: EncodeOptions {
-                            speed,
-                            qp,
-                            max_bitrate,
-                            tiles,
-                        },
-                        video_info,
-                        client_version: semver::Version::parse(env!("CARGO_PKG_VERSION")).unwrap(),
-                    })
-                    .send()
-                    .and_then(|res| res.error_for_status())
-                    .and_then(|res| res.json::<PostEnqueueResponse>())
-                {
-                    Ok(response) => {
-                        worker.slot_status = SlotStatus::Requested;
-                        let slot = worker.workers.iter().position(|worker| !worker).unwrap();
-                        let connection = ActiveConnection {
-                            worker_uri: worker.uri.clone(),
-                            worker_password: worker.password.clone(),
+        #[cfg(feature = "remote")]
+        {
+            let mut worker_start_idx = 0;
+            for worker in remote_pool.lock().iter_mut() {
+                if worker.workers.iter().all(|worker| *worker) {
+                    worker_start_idx += worker.workers.len();
+                    continue;
+                }
+                if let SlotStatus::Empty = worker.slot_status {
+                    debug!("Empty connection--requesting new slot");
+                    match CLIENT
+                        .post(&format!("{}{}", &worker.uri, "enqueue"))
+                        .header("X-RAV1E-AUTH", &worker.password)
+                        .json(&SlotRequestMessage {
+                            options: EncodeOptions {
+                                speed,
+                                qp,
+                                max_bitrate,
+                                tiles,
+                            },
                             video_info,
-                            request_id: response.request_id,
-                            encode_info: None,
-                            worker_update_sender: worker.update_channel.0.clone(),
-                            slot_in_worker: slot,
-                            progress_sender: remote_progress_senders[worker_start_idx + slot]
-                                .clone(),
-                        };
-                        let slot_ready_sender = slot_ready_sender.clone();
-                        scope.spawn(move |_| {
-                            wait_for_slot_allocation::<T>(connection, slot_ready_sender)
-                        });
-                    }
-                    Err(e) => {
-                        error!("Failed to contact remote server: {}", e);
+                            client_version: semver::Version::parse(env!("CARGO_PKG_VERSION"))
+                                .unwrap(),
+                        })
+                        .send()
+                        .and_then(|res| res.error_for_status())
+                        .and_then(|res| res.json::<PostEnqueueResponse>())
+                    {
+                        Ok(response) => {
+                            worker.slot_status = SlotStatus::Requested;
+                            let slot = worker.workers.iter().position(|worker| !worker).unwrap();
+                            let connection = ActiveConnection {
+                                worker_uri: worker.uri.clone(),
+                                worker_password: worker.password.clone(),
+                                video_info,
+                                request_id: response.request_id,
+                                encode_info: None,
+                                worker_update_sender: worker.update_channel.0.clone(),
+                                slot_in_worker: slot,
+                                progress_sender: remote_progress_senders[worker_start_idx + slot]
+                                    .clone(),
+                            };
+                            let slot_ready_sender = slot_ready_sender.clone();
+                            scope.spawn(move |_| {
+                                wait_for_slot_allocation::<T>(connection, slot_ready_sender)
+                            });
+                        }
+                        Err(e) => {
+                            error!("Failed to contact remote server: {}", e);
+                        }
                     }
                 }
+                worker_start_idx += worker.workers.len();
             }
-            worker_start_idx += worker.workers.len();
         }
     }
 }

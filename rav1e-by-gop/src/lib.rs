@@ -3,18 +3,22 @@
 pub mod compress;
 pub mod encode;
 pub mod muxer;
+#[cfg(feature = "remote")]
 pub mod remote;
 
 pub use self::compress::*;
 pub use self::encode::*;
 pub use self::muxer::*;
+#[cfg(feature = "remote")]
 pub use self::remote::*;
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "remote")]
 use url::Url;
+#[cfg(feature = "remote")]
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -42,6 +46,7 @@ impl Default for VideoDetails {
 
 pub enum Slot {
     Local(usize),
+    #[cfg(feature = "remote")]
     Remote(Box<ActiveConnection>),
 }
 
@@ -49,6 +54,7 @@ impl Slot {
     pub fn is_remote(&self) -> bool {
         match self {
             Slot::Local(_) => false,
+            #[cfg(feature = "remote")]
             Slot::Remote(_) => true,
         }
     }
@@ -76,6 +82,7 @@ impl SegmentFrameData {
     }
 }
 
+#[cfg(feature = "remote")]
 pub struct ActiveConnection {
     pub worker_uri: Url,
     pub worker_password: String,

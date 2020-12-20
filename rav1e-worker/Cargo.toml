@@ -25,7 +25,7 @@ num_cpus = "1"
 parking_lot = "0.11"
 rand = "0.7.3"
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm", "serialize"] }
-rav1e-by-gop = { path = "../rav1e-by-gop", default-features = false }
+rav1e-by-gop = { path = "../rav1e-by-gop", default-features = false, features = ["remote"] }
 rayon = "1.5"
 semver = "0.11"
 serde = { version = "1", features = ["derive"] }

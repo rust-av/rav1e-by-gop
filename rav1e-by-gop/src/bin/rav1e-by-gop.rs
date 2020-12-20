@@ -5,17 +5,21 @@ mod analyze;
 mod decode;
 mod encode;
 mod progress;
+#[cfg(feature = "remote")]
 mod remote;
 
 use self::encode::*;
 use self::progress::*;
 use anyhow::{ensure, Result};
 use clap::{App, Arg, ArgMatches};
-use console::{style, Term};
+use console::style;
+use console::Term;
+#[cfg(feature = "remote")]
 use lazy_static::lazy_static;
 use log::info;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
+#[cfg(feature = "remote")]
 use serde::Deserialize;
 use std::cmp;
 use std::collections::BTreeSet;
@@ -24,6 +28,7 @@ use std::io::Write;
 use std::io::{stdin, Read};
 use std::path::PathBuf;
 use std::str::FromStr;
+#[cfg(feature = "remote")]
 use std::time::Duration;
 use std::{env, fmt};
 use systemstat::{ByteSize, Platform, System};
@@ -32,6 +37,7 @@ use systemstat::{ByteSize, Platform, System};
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+#[cfg(feature = "remote")]
 lazy_static! {
     static ref CLIENT: reqwest::blocking::Client = reqwest::blocking::ClientBuilder::new()
         .timeout(None)
@@ -51,7 +57,8 @@ fn main() -> Result<()> {
     // Thanks, borrow checker
     let mem_usage_default = MemoryUsage::default().to_string();
 
-    let matches = App::new("rav1e-by-gop")
+    #[allow(unused_mut)]
+    let mut app = App::new("rav1e-by-gop")
         .arg(
             Arg::with_name("INPUT")
                 .help("Sets the input file or command to use")
@@ -148,28 +155,30 @@ fn main() -> Result<()> {
             .short("t")
             .default_value("1")
         )
-        .arg(
-            Arg::with_name("WORKERS")
-                .help("A path to the TOML file defining remote encoding workers")
-                .long("workers")
-                .default_value("workers.toml")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("NO_LOCAL")
-                .help("Disable local encoding threads--requires distributed workers")
-                .long("no-local"),
-        )
         .arg(Arg::with_name("INPUT_TEMP_FILES")
             .help("Write y4m input segments to temporary files instead of keeping them in memory. Reduces memory usage but increases disk usage. Should enable more segments to run simultaneously.")
             .long("tmp-input"))
-        .arg(
-            Arg::with_name("LOCAL_WORKERS")
-                .help("Limit the maximum number of local workers that can be used")
-                .long("local-workers")
-                .takes_value(true),
-        )
-        .get_matches();
+        .arg(Arg::with_name("LOCAL_WORKERS")
+            .help("Limit the maximum number of local workers that can be used")
+            .long("local-workers")
+            .takes_value(true));
+    #[cfg(feature = "remote")]
+    {
+        app = app
+            .arg(
+                Arg::with_name("WORKERS")
+                    .help("A path to the TOML file defining remote encoding workers")
+                    .long("workers")
+                    .default_value("workers.toml")
+                    .takes_value(true),
+            )
+            .arg(
+                Arg::with_name("NO_LOCAL")
+                    .help("Disable local encoding threads--requires distributed workers")
+                    .long("no-local"),
+            );
+    }
+    let matches = app.get_matches();
     let opts = CliOptions::from(&matches);
     ensure!(
         opts.max_keyint >= opts.min_keyint,
@@ -213,7 +222,9 @@ pub struct CliOptions {
     verbose: bool,
     memory_usage: MemoryUsage,
     display_progress: bool,
+    #[cfg(feature = "remote")]
     workers: Vec<WorkerConfig>,
+    #[cfg(feature = "remote")]
     use_local: bool,
     temp_input: bool,
 }
@@ -268,6 +279,7 @@ impl From<&ArgMatches<'_>> for CliOptions {
                 .unwrap_or_default(),
             display_progress: Term::stderr().features().is_attended()
                 && !matches.is_present("NO_PROGRESS"),
+            #[cfg(feature = "remote")]
             workers: {
                 let workers_file_path = matches.value_of("WORKERS").unwrap();
                 match File::open(workers_file_path) {
@@ -290,6 +302,7 @@ impl From<&ArgMatches<'_>> for CliOptions {
                     }
                 }
             },
+            #[cfg(feature = "remote")]
             use_local: !matches.is_present("NO_LOCAL"),
             temp_input,
         }
@@ -377,6 +390,7 @@ fn decide_thread_count(
     has_remote_workers: bool,
     tiles: usize,
 ) -> usize {
+    #[cfg(feature = "remote")]
     if !opts.use_local {
         return 0;
     }
@@ -460,11 +474,13 @@ fn bytes_per_frame(video_info: &VideoDetails) -> u64 {
     }) as u64
 }
 
+#[cfg(feature = "remote")]
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkerFile {
     pub workers: Vec<WorkerConfig>,
 }
 
+#[cfg(feature = "remote")]
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkerConfig {
     pub host: String,

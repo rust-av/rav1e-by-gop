@@ -1,4 +1,5 @@
 use crate::analyze::InputFinishedReceiver;
+#[cfg(feature = "remote")]
 use crate::remote::RemoteWorkerInfo;
 use clap::ArgMatches;
 use console::Term;
@@ -95,7 +96,7 @@ pub fn get_progress_filename(output: &Path) -> PathBuf {
 pub(crate) fn watch_progress_receivers(
     receivers: Vec<ProgressReceiver>,
     slots: Arc<Mutex<Vec<bool>>>,
-    remote_slots: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
+    #[cfg(feature = "remote")] remote_slots: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     output_file: Output,
     verbose: bool,
     mut overall_progress: ProgressInfo,
@@ -150,13 +151,16 @@ pub(crate) fn watch_progress_receivers(
             debug!("Set input finished");
             input_finished = true;
         }
-        if input_finished
-            && slots.lock().iter().all(|&slot| !slot)
-            && remote_slots
-                .lock()
-                .iter()
-                .all(|slot| slot.workers.iter().all(|worker| !worker))
-        {
+
+        let local_slots_done = slots.lock().iter().all(|&slot| !slot);
+        #[cfg(feature = "remote")]
+        let remote_slots_done = remote_slots
+            .lock()
+            .iter()
+            .all(|slot| slot.workers.iter().all(|worker| !worker));
+        #[cfg(not(feature = "remote"))]
+        let remote_slots_done = true;
+        if input_finished && local_slots_done && remote_slots_done {
             debug!("Finishing progress");
             // Done encoding
             main_pb.finish();

@@ -1,19 +1,23 @@
 use super::VideoDetails;
-use crate::analyze::{
-    run_first_pass, AnalyzerChannel, AnalyzerReceiver, InputFinishedChannel, InputFinishedReceiver,
-    RemoteAnalyzerChannel, RemoteAnalyzerReceiver,
-};
+use crate::analyze::{run_first_pass, AnalyzerChannel, AnalyzerReceiver, InputFinishedChannel};
+#[cfg(feature = "remote")]
+use crate::analyze::{InputFinishedReceiver, RemoteAnalyzerChannel, RemoteAnalyzerReceiver};
 use crate::decode::*;
 use crate::muxer::create_muxer;
 use crate::progress::*;
+#[cfg(feature = "remote")]
 use crate::remote::{discover_remote_worker, remote_encode_segment, RemoteWorkerInfo};
 use crate::CliOptions;
 use crate::{decide_thread_count, Output};
-use anyhow::{bail, Result};
+#[cfg(feature = "remote")]
+use anyhow::bail;
+use anyhow::Result;
 use console::style;
 use crossbeam_channel::{bounded, unbounded, TryRecvError};
 use crossbeam_utils::thread::{scope, Scope};
-use log::{debug, error, info};
+#[cfg(feature = "remote")]
+use log::error;
+use log::{debug, info};
 use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
@@ -93,6 +97,7 @@ pub fn perform_encode_inner<
         style(format!("{}-bit", video_info.bit_depth)).cyan()
     );
 
+    #[cfg(feature = "remote")]
     let remote_workers = opts
         .workers
         .iter()
@@ -106,19 +111,23 @@ pub fn perform_encode_inner<
                 .ok()
         })
         .collect::<Vec<_>>();
-    let worker_thread_count = remote_workers
+    #[cfg(feature = "remote")]
+    let remote_worker_slot_count = remote_workers
         .iter()
         .map(|worker| worker.workers.len())
         .sum::<usize>();
+    #[cfg(not(feature = "remote"))]
+    let remote_worker_slot_count = 0;
 
     let num_threads =
-        decide_thread_count(opts, &video_info, !remote_workers.is_empty(), opts.tiles);
+        decide_thread_count(opts, &video_info, remote_worker_slot_count > 0, opts.tiles);
 
+    #[cfg(feature = "remote")]
     if !remote_workers.is_empty() {
         info!(
             "Discovered {} remote workers with up to {} slots",
             remote_workers.len(),
-            worker_thread_count
+            remote_worker_slot_count
         )
     } else if num_threads == 0 {
         bail!("Cannot disable local threads without having remote workers available!");
@@ -173,12 +182,14 @@ pub fn perform_encode_inner<
     };
 
     let analyzer_channel: AnalyzerChannel = unbounded();
+    #[cfg(feature = "remote")]
     let remote_analyzer_channel: RemoteAnalyzerChannel = unbounded();
-    let progress_channels: Vec<ProgressChannel> = (0..(num_local_slots + worker_thread_count))
+    let progress_channels: Vec<ProgressChannel> = (0..(num_local_slots + remote_worker_slot_count))
         .map(|_| unbounded())
         .collect();
     let input_finished_channel: InputFinishedChannel = bounded(1);
     let slots: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![false; num_local_slots]));
+    #[cfg(feature = "remote")]
     let remote_slots = Arc::new(Mutex::new(remote_workers));
 
     let output_file = opts.output.clone();
@@ -193,6 +204,7 @@ pub fn perform_encode_inner<
         .map(|(_, rx)| rx.clone())
         .collect::<Vec<_>>();
     let slots_ref = slots.clone();
+    #[cfg(feature = "remote")]
     let remote_slots_ref = remote_slots.clone();
     let input_finished_receiver = input_finished_channel.1.clone();
     let max_frames = opts.max_frames;
@@ -201,6 +213,7 @@ pub fn perform_encode_inner<
         watch_progress_receivers(
             receivers,
             slots_ref,
+            #[cfg(feature = "remote")]
             remote_slots_ref,
             output_file,
             verbose,
@@ -213,14 +226,20 @@ pub fn perform_encode_inner<
 
     let opts_ref = opts.clone();
     let analyzer_sender = analyzer_channel.0.clone();
+    #[cfg(feature = "remote")]
     let remote_analyzer_sender = remote_analyzer_channel.0.clone();
+    #[cfg(feature = "remote")]
     let remote_slots_ref = remote_slots.clone();
     let input_finished_sender = input_finished_channel.0.clone();
+    #[cfg(feature = "remote")]
     let input_finished_receiver = input_finished_channel.1.clone();
+    #[cfg(not(feature = "remote"))]
+    let input_finished_receiver = input_finished_channel.1;
     let progress_senders = progress_channels
         .iter()
         .map(|(tx, _)| tx.clone())
         .collect::<Vec<_>>();
+    #[cfg(feature = "remote")]
     let remote_progress_senders = progress_senders
         .iter()
         .skip(num_local_slots)
@@ -233,12 +252,15 @@ pub fn perform_encode_inner<
             dec,
             opts_ref,
             analyzer_sender,
+            #[cfg(feature = "remote")]
             remote_analyzer_sender,
             progress_senders,
+            #[cfg(feature = "remote")]
             remote_progress_senders,
             input_finished_sender,
             input_finished_receiver,
             slots,
+            #[cfg(feature = "remote")]
             remote_slots_ref,
             rayon_handle,
             start_frameno,
@@ -250,6 +272,7 @@ pub fn perform_encode_inner<
         );
     });
 
+    #[cfg(feature = "remote")]
     for worker in remote_slots.lock().iter() {
         let receiver = worker.update_channel.1.clone();
         let remote_slots_ref = remote_slots.clone();
@@ -272,17 +295,20 @@ pub fn perform_encode_inner<
     })
     .expect("Failed to create segment output");
 
-    let input_finished_receiver = input_finished_channel.1;
-    let remote_analyzer_receiver = remote_analyzer_channel.1;
-    let remote_slots_ref = remote_slots;
-    let remote_listener = s.spawn(move |s| {
-        listen_for_remote_workers(
-            s,
-            remote_analyzer_receiver,
-            input_finished_receiver,
-            remote_slots_ref,
-        )
-    });
+    #[cfg(feature = "remote")]
+    let remote_listener = {
+        let input_finished_receiver = input_finished_channel.1;
+        let remote_analyzer_receiver = remote_analyzer_channel.1;
+        let remote_slots_ref = remote_slots;
+        s.spawn(move |s| {
+            listen_for_remote_workers(
+                s,
+                remote_analyzer_receiver,
+                input_finished_receiver,
+                remote_slots_ref,
+            )
+        })
+    };
 
     if num_threads > 0 {
         let _ = listen_for_local_workers::<T>(
@@ -296,6 +322,7 @@ pub fn perform_encode_inner<
         );
         thread_pool.unwrap().join();
     }
+    #[cfg(feature = "remote")]
     let _ = remote_listener.join();
 
     if let Output::File(output) = &opts.output {
@@ -305,6 +332,7 @@ pub fn perform_encode_inner<
     Ok(())
 }
 
+#[cfg(feature = "remote")]
 fn watch_worker_updates(
     remote_slots: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     update_receiver: WorkerUpdateReceiver,
@@ -408,6 +436,7 @@ fn listen_for_local_workers<T: Pixel>(
     Ok(())
 }
 
+#[cfg(feature = "remote")]
 fn listen_for_remote_workers(
     scope: &Scope,
     remote_analyzer_receiver: RemoteAnalyzerReceiver,
