@@ -1094,7 +1094,7 @@ impl From<&SerializableProgressInfo> for ProgressInfo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FrameSummary {
     /// Frame size in bytes
     pub size: usize,
@@ -1113,7 +1113,7 @@ impl<T: Pixel> From<Packet<T>> for FrameSummary {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SerializableFrameSummary {
     pub size: usize,
     pub frame_type: u8,
