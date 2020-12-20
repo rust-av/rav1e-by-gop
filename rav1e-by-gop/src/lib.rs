@@ -13,7 +13,6 @@ pub use self::muxer::*;
 pub use self::remote::*;
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
-use rayon::ThreadPool;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -126,7 +125,7 @@ pub fn build_config(
     max_bitrate: Option<i32>,
     tiles: usize,
     video_info: VideoDetails,
-    pool: Arc<ThreadPool>,
+    pool: Arc<rayon::ThreadPool>,
 ) -> Config {
     Config::new()
         .with_encoder_config(build_encoder_config(
