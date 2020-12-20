@@ -10,12 +10,13 @@ use crate::{compress_frame, CliOptions};
 use av_scenechange::{new_detector, DetectionOptions};
 use byteorder::{LittleEndian, WriteBytesExt};
 use crossbeam_channel::{unbounded, Receiver, Sender};
-use crossbeam_utils::thread::Scope;
 use itertools::Itertools;
 use log::{debug, error};
 use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
+use rayon::Scope;
+use rayon::ThreadPool;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -66,7 +67,7 @@ pub(crate) fn run_first_pass<
     input_finished_receiver: InputFinishedReceiver,
     slot_pool: Arc<Mutex<Vec<bool>>>,
     #[cfg(feature = "remote")] remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
-    rayon_pool: Arc<rayon::ThreadPool>,
+    thread_pool: Arc<ThreadPool>,
     next_frameno: usize,
     known_keyframes: BTreeSet<usize>,
     skipped_segments: BTreeSet<usize>,
@@ -137,7 +138,7 @@ pub(crate) fn run_first_pass<
             let mut lookahead_queue: BTreeMap<usize, Arc<Frame<T>>> = BTreeMap::new();
 
             let enc_cfg =
-                build_config(opts.speed, opts.qp, opts.max_bitrate, opts.tiles, video_info, rayon_pool);
+                build_config(opts.speed, opts.qp, opts.max_bitrate, opts.tiles, video_info, thread_pool);
             let ctx: Context<T> = enc_cfg.new_context::<T>().unwrap();
 
             while let Ok(message) = slot_ready_listener.recv() {
@@ -459,28 +460,26 @@ pub(crate) fn run_first_pass<
                 segment_no += 1;
                 num_segments.fetch_add(1, Ordering::SeqCst);
             }
-        })
-        .join()
-        .unwrap();
 
-    // Close any extra ready sockets
-    while let Ok(message) = slot_ready_channel.1.try_recv() {
-        match message {
-            Slot::Local(slot) => {
-                slot_pool.lock()[slot] = false;
+            // Close any extra ready sockets
+            while let Ok(message) = slot_ready_channel.1.try_recv() {
+                match message {
+                    Slot::Local(slot) => {
+                        slot_pool.lock()[slot] = false;
+                    }
+                    #[cfg(feature = "remote")]
+                    Slot::Remote(connection) => {
+                        connection
+                            .worker_update_sender
+                            .send(WorkerStatusUpdate {
+                                status: Some(SlotStatus::Empty),
+                                slot_delta: Some((connection.slot_in_worker, false)),
+                            })
+                            .unwrap();
+                    }
+                };
             }
-            #[cfg(feature = "remote")]
-            Slot::Remote(connection) => {
-                connection
-                    .worker_update_sender
-                    .send(WorkerStatusUpdate {
-                        status: Some(SlotStatus::Empty),
-                        slot_delta: Some((connection.slot_in_worker, false)),
-                    })
-                    .unwrap();
-            }
-        };
-    }
+        });
 }
 
 fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(

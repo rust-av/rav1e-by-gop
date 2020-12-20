@@ -3,6 +3,7 @@ use chrono::Utc;
 use log::{error, info};
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
+use rayon::ThreadPool;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -17,7 +18,7 @@ use v_frame::pixel::Pixel;
 
 pub async fn start_workers(worker_threads: usize) {
     info!("Starting {} workers", worker_threads);
-    let rayon_pool = Arc::new(
+    let thread_pool = Arc::new(
         rayon::ThreadPoolBuilder::new()
             .num_threads(worker_threads)
             .build()
@@ -59,7 +60,7 @@ pub async fn start_workers(worker_threads: usize) {
                         let video_info = item_handle.video_info;
                         let options = item_handle.options;
                         let raw_frames = raw_frames.clone();
-                        let pool_handle = rayon_pool.clone();
+                        let pool_handle = thread_pool.clone();
                         tokio::spawn(async move {
                             if video_info.bit_depth <= 8 {
                                 encode_segment::<u8>(
@@ -94,7 +95,7 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
     video_info: VideoDetails,
     options: EncodeOptions,
     input: Arc<SegmentFrameData>,
-    pool: Arc<rayon::ThreadPool>,
+    pool: Arc<ThreadPool>,
 ) {
     {
         let queue_handle = ENCODER_QUEUE.read();

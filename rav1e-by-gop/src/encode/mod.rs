@@ -9,6 +9,7 @@ use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt};
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
+use rayon::{Scope, ThreadPool};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -18,7 +19,6 @@ use std::io::{BufReader, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
 use systemstat::data::ByteSize;
-use threadpool::ThreadPool;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EncodeOptions {
@@ -32,8 +32,8 @@ pub fn encode_segment(
     opts: EncodeOptions,
     video_info: VideoDetails,
     data: SegmentData,
-    thread_pool: &mut ThreadPool,
-    rayon_pool: Arc<rayon::ThreadPool>,
+    thread_pool: Arc<ThreadPool>,
+    scope: &Scope,
     progress_sender: ProgressSender,
     segment_output_file: Output,
 ) -> Result<()> {
@@ -57,7 +57,7 @@ pub fn encode_segment(
     );
     let _ = progress_sender.send(ProgressStatus::Encoding(Box::new(progress.clone())));
 
-    thread_pool.execute(move || {
+    scope.spawn(move |_scope| {
         let source = Source {
             frame_data: match data.frame_data {
                 SegmentFrameData::Y4MFile { path, frame_count } => SourceFrameData::Y4MFile {
@@ -77,7 +77,7 @@ pub fn encode_segment(
         };
         if video_info.bit_depth > 8 {
             do_encode::<u16>(
-                rayon_pool,
+                thread_pool,
                 opts,
                 video_info,
                 source,
@@ -88,7 +88,7 @@ pub fn encode_segment(
             .expect("Failed encoding segment");
         } else {
             do_encode::<u8>(
-                rayon_pool,
+                thread_pool,
                 opts,
                 video_info,
                 source,
