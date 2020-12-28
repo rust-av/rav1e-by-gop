@@ -23,7 +23,7 @@ dialoguer = { version = "0.7", optional = true }
 env_logger = { version = "0.8.1", optional = true }
 http = { version = "0.2", optional = true }
 indicatif = { version = "0.15", optional = true }
-itertools = { version = "0.9", optional = true }
+itertools = { version = "0.10", optional = true }
 ivf = "0.1"
 lazy_static = { version = "1.0", optional = true }
 log = "0.4"
