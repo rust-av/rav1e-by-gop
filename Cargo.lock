@@ -1619,7 +1619,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "clap",
- "console 0.13.0",
+ "console 0.14.0",
  "crossbeam-channel",
  "crossbeam-utils",
  "dialoguer",
