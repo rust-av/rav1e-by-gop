@@ -1625,7 +1625,6 @@ dependencies = [
  "arrayvec",
  "av-scenechange",
  "bincode",
- "byteorder",
  "chrono",
  "clap",
  "console 0.14.0",

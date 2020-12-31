@@ -8,7 +8,6 @@ use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
 use crate::CLIENT;
 use crate::{compress_frame, CliOptions};
 use av_scenechange::{new_detector, DetectionOptions};
-use byteorder::{LittleEndian, WriteBytesExt};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossbeam_utils::thread::Scope;
 use itertools::Itertools;
@@ -199,14 +198,11 @@ pub(crate) fn run_first_pass<
                                     match read_raw_frame(&mut dec) {
                                         Ok(frame) => {
                                             frame_count += 1;
-                                            let frame_data = bincode::serialize(
+                                            bincode::serialize_into(
+                                                &mut writer,
                                                 &process_raw_frame(&frame, &ctx, &cfg),
-                                            )
-                                            .unwrap();
-                                            writer
-                                                .write_u32::<LittleEndian>(frame_data.len() as u32)
-                                                .unwrap();
-                                            writer.write_all(&frame_data).unwrap();
+                                            ).unwrap();
+                                            writer.flush().unwrap();
                                             lookahead_frameno += 1;
                                         }
                                         Err(DecodeError::EOF) => {
@@ -350,13 +346,11 @@ pub(crate) fn run_first_pass<
                             frame_count = 0;
                             for frameno in (interval.0)..(interval.1) {
                                 frame_count += 1;
-                                let frame_data =
-                                    bincode::serialize(&Arc::try_unwrap(lookahead_queue.remove(&frameno).unwrap()).unwrap())
-                                        .unwrap();
-                                writer
-                                    .write_u32::<LittleEndian>(frame_data.len() as u32)
-                                    .unwrap();
-                                writer.write_all(&frame_data).unwrap();
+                                bincode::serialize_into(
+                                    &mut writer,
+                                    &Arc::try_unwrap(lookahead_queue.remove(&frameno).unwrap()).unwrap()
+                                ).unwrap();
+                                writer.flush().unwrap();
                             }
                         } else {
                             processed_frames = Vec::with_capacity(interval_len);

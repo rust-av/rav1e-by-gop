@@ -6,7 +6,6 @@ use super::VideoDetails;
 use crate::muxer::create_muxer;
 use crate::{build_config, decompress_frame, Output, SegmentData, SegmentFrameData};
 use anyhow::Result;
-use byteorder::{LittleEndian, ReadBytesExt};
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::de::DeserializeOwned;
@@ -14,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 use systemstat::data::ByteSize;
@@ -180,10 +179,7 @@ impl Source {
                 frames[self.sent_count] = Vec::new();
             }
             SourceFrameData::Y4MFile { ref mut input, .. } => {
-                let bytes = input.read_u32::<LittleEndian>().unwrap() as usize;
-                let mut data = vec![0; bytes];
-                input.read_exact(&mut data).unwrap();
-                let _ = ctx.send_frame(Some(Arc::new(bincode::deserialize(&data).unwrap())));
+                let _ = ctx.send_frame(Some(Arc::new(bincode::deserialize_from(input).unwrap())));
             }
         };
         self.sent_count += 1;
