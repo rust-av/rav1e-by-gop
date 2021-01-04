@@ -49,9 +49,7 @@ pub(crate) fn get_video_details<R: Read>(dec: &Decoder<R>) -> VideoDetails {
     }
 }
 
-pub(crate) fn read_raw_frame<'d, R: Read>(
-    dec: &'d mut Decoder<R>,
-) -> Result<y4m::Frame<'d>, DecodeError> {
+pub(crate) fn read_raw_frame<R: Read>(dec: &mut Decoder<R>) -> Result<y4m::Frame<'_>, DecodeError> {
     dec.read_frame().map_err(Into::into)
 }
 
