@@ -18,6 +18,7 @@ use crossbeam_utils::thread::{scope, Scope};
 #[cfg(feature = "remote")]
 use log::error;
 use log::{debug, info};
+#[cfg(feature = "remote")]
 use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;

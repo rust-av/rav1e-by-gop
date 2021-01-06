@@ -12,6 +12,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossbeam_utils::thread::Scope;
 use itertools::Itertools;
 use log::{debug, error};
+#[cfg(feature = "remote")]
 use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;

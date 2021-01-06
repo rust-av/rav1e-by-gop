@@ -6,6 +6,7 @@ use console::Term;
 use console::{style, StyledObject};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use log::{debug, error, trace};
+#[cfg(feature = "remote")]
 use parking_lot::Mutex;
 use rav1e_by_gop::*;
 use std::fs::File;

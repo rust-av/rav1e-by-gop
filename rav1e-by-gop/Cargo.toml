@@ -65,10 +65,9 @@ binary = [
     "itertools",
     "jemallocator",
     "num_cpus",
-    "parking_lot",
     "rmp-serde",
     "thiserror",
     "y4m"
 ]
-remote = ["http", "lazy_static", "reqwest", "semver", "toml", "url", "uuid"]
+remote = ["http", "lazy_static", "parking_lot", "reqwest", "semver", "toml", "url", "uuid"]
 
