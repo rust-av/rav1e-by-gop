@@ -11,6 +11,7 @@ use rav1e_by_gop::*;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{cmp, thread};
@@ -95,7 +96,7 @@ pub fn get_progress_filename(output: &Path) -> PathBuf {
 
 pub(crate) fn watch_progress_receivers(
     receivers: Vec<ProgressReceiver>,
-    slots: Arc<Mutex<Vec<bool>>>,
+    slots: Arc<Vec<AtomicBool>>,
     #[cfg(feature = "remote")] remote_slots: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     output_file: Output,
     verbose: bool,
@@ -104,7 +105,7 @@ pub(crate) fn watch_progress_receivers(
     display_progress: bool,
     max_frames: Option<u64>,
 ) {
-    let slots_count = slots.lock().len();
+    let slots_count = slots.len();
     let segments_pb_holder = MultiProgress::new();
     if !display_progress {
         segments_pb_holder.set_draw_target(ProgressDrawTarget::hidden());
@@ -152,7 +153,7 @@ pub(crate) fn watch_progress_receivers(
             input_finished = true;
         }
 
-        let local_slots_done = slots.lock().iter().all(|&slot| !slot);
+        let local_slots_done = slots.iter().all(|slot| !slot.load(Ordering::SeqCst));
         #[cfg(feature = "remote")]
         let remote_slots_done = remote_slots
             .lock()
@@ -181,7 +182,7 @@ pub(crate) fn watch_progress_receivers(
 fn update_progress(
     progress: ProgressStatus,
     overall_progress: &mut ProgressInfo,
-    slots: Arc<Mutex<Vec<bool>>>,
+    slots: Arc<Vec<AtomicBool>>,
     slots_count: usize,
     slot_idx: usize,
     pb: &ProgressBar,
@@ -219,7 +220,7 @@ fn update_progress(
                 overall_progress.encoding_stats.0 += &progress.encoding_stats.0;
                 overall_progress.encoding_stats.1 += &progress.encoding_stats.1;
                 if !remote {
-                    slots.lock()[slot_idx] = false;
+                    slots[slot_idx].store(false, Ordering::SeqCst);
                 }
 
                 pb.set_message("");

@@ -28,8 +28,8 @@ use std::fs::remove_file;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::Path;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::thread;
 use std::thread::sleep;
@@ -188,7 +188,13 @@ pub fn perform_encode_inner<
         .map(|_| unbounded())
         .collect();
     let input_finished_channel: InputFinishedChannel = bounded(1);
-    let slots: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![false; num_local_slots]));
+    let slots = Arc::new({
+        let mut slots = Vec::with_capacity(num_local_slots);
+        for _ in 0..num_local_slots {
+            slots.push(AtomicBool::new(false));
+        }
+        slots
+    });
     #[cfg(feature = "remote")]
     let remote_slots = Arc::new(Mutex::new(remote_workers));
 

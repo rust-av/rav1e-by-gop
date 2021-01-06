@@ -20,8 +20,8 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
@@ -63,7 +63,7 @@ pub(crate) fn run_first_pass<
     #[cfg(feature = "remote")] remote_progress_senders: Vec<ProgressSender>,
     input_finished_sender: InputFinishedSender,
     input_finished_receiver: InputFinishedReceiver,
-    slot_pool: Arc<Mutex<Vec<bool>>>,
+    slot_pool: Arc<Vec<AtomicBool>>,
     #[cfg(feature = "remote")] remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     rayon_pool: Arc<rayon::ThreadPool>,
     next_frameno: usize,
@@ -297,7 +297,7 @@ pub(crate) fn run_first_pass<
                                 input_finished_sender.send(()).unwrap();
                                 match message {
                                     Slot::Local(slot) => {
-                                        pool_handle.lock()[slot] = false;
+                                        pool_handle[slot].store(false, Ordering::SeqCst);
                                         progress_senders[slot].send(ProgressStatus::Idle).unwrap();
                                     }
                                     #[cfg(feature = "remote")]
@@ -461,7 +461,7 @@ pub(crate) fn run_first_pass<
     while let Ok(message) = slot_ready_channel.1.try_recv() {
         match message {
             Slot::Local(slot) => {
-                slot_pool.lock()[slot] = false;
+                slot_pool[slot].store(false, Ordering::SeqCst);
             }
             #[cfg(feature = "remote")]
             Slot::Remote(connection) => {
@@ -478,7 +478,7 @@ pub(crate) fn run_first_pass<
 }
 
 fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
-    pool: Arc<Mutex<Vec<bool>>>,
+    pool: Arc<Vec<AtomicBool>>,
     #[cfg(feature = "remote")] remote_pool: Arc<Mutex<Vec<RemoteWorkerInfo>>>,
     slot_ready_sender: SlotReadySender,
     #[cfg(feature = "remote")] remote_progress_senders: Vec<ProgressSender>,
@@ -498,16 +498,13 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
 
         sleep(Duration::from_millis(500));
 
-        {
-            let mut pool_lock = pool.lock();
-            if let Some(slot) = pool_lock.iter().position(|slot| !*slot) {
-                if slot_ready_sender.send(Slot::Local(slot)).is_err() {
-                    debug!("Exiting slot checker loop");
-                    return;
-                };
-                pool_lock[slot] = true;
-                continue;
-            }
+        if let Some(slot) = pool.iter().position(|slot| !slot.load(Ordering::SeqCst)) {
+            if slot_ready_sender.send(Slot::Local(slot)).is_err() {
+                debug!("Exiting slot checker loop");
+                return;
+            };
+            pool[slot].store(true, Ordering::SeqCst);
+            continue;
         }
 
         #[cfg(feature = "remote")]
