@@ -30,7 +30,7 @@ num_cpus = { version = "1", optional = true }
 parking_lot = { version = "0.11", optional = true }
 rav1e = { git = "https://github.com/xiph/rav1e", default-features = false, features = ["asm", "serialize", "unstable"] }
 rayon = "1.5"
-reqwest = { version = "0.10", features = ["blocking", "json"], optional = true }
+reqwest = { version = "0.11", features = ["blocking", "json"], optional = true }
 rmp-serde = { version = "0.15", optional = true }
 semver = { version = "0.11", features = ["serde"], optional = true }
 serde = { version = "1", features = ["derive"] }
