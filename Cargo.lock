@@ -585,16 +585,16 @@ dependencies = [
 
 [[package]]
 name = "futures-util"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d304cff4a7b99cfb7986f7d43fbe93d175e72e704a8860787cc95e9ffd85cbd2"
+checksum = "036a2107cdeb57f6d7322f1b6c363dad67cd63ca3b7d1b925bdf75bd5d96cda9"
 dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
  "futures-task",
  "memchr",
- "pin-project 1.0.3",
+ "pin-project-lite 0.2.1",
  "pin-utils",
  "slab",
 ]
