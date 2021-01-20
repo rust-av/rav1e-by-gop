@@ -42,7 +42,7 @@ url = { version = "2.2", optional = true }
 uuid = { version = "0.8", features = ["serde"], optional = true }
 v_frame = { version = "0.2", features = ["serialize"] }
 y4m = { version = "0.7", optional = true }
-zstd = "0.5"
+zstd = "0.6"
 
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux"))'.dependencies]
 jemallocator = { version = "0.3.2", features = ["background_threads"], optional = true }
