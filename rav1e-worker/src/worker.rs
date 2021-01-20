@@ -11,7 +11,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 use uuid::Uuid;
 use v_frame::pixel::Pixel;
 
@@ -28,7 +28,7 @@ pub async fn start_workers(worker_threads: usize) {
     // and allocates slots when they are available.
     tokio::spawn(async move {
         loop {
-            delay_for(Duration::from_secs(3)).await;
+            sleep(Duration::from_secs(3)).await;
 
             let reader = ENCODER_QUEUE.read();
             let mut in_progress_items = 0;

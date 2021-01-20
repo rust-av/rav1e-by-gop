@@ -10,7 +10,7 @@ use std::env;
 use std::net::SocketAddrV4;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 use uuid::v1::Context;
 use uuid::Uuid;
 use worker::*;
@@ -153,6 +153,6 @@ async fn main() {
             }
             debug!("Items in queue: {:?}", items);
         }
-        delay_for(Duration::from_secs(5)).await;
+        sleep(Duration::from_secs(5)).await;
     }
 }
