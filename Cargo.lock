@@ -70,7 +70,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "av-scenechange"
 version = "0.4.2"
-source = "git+https://github.com/rust-av/av-scenechange#7d024a611ee5fa1bee45f966e7f6841313da1fed"
+source = "git+https://github.com/rust-av/av-scenechange#97f28f27addb664e8e16abc26935180ac3f019ed"
 dependencies = [
  "rav1e",
  "serde",
@@ -1383,7 +1383,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.4.0"
-source = "git+https://github.com/xiph/rav1e#b1ccd6349b2a6db2513550caa80557f579fdf451"
+source = "git+https://github.com/xiph/rav1e#816a7c5509492e58792aec0c5063e630261f51c8"
 dependencies = [
  "arbitrary",
  "arg_enum_proc_macro",
@@ -1760,18 +1760,18 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.122"
+version = "1.0.123"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "974ef1bd2ad8a507599b336595454081ff68a9599b4890af7643c0c0ed73a62c"
+checksum = "92d5161132722baa40d802cc70b15262b98258453e85e5d1d365c757c73869ae"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.122"
+version = "1.0.123"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8dee1f300f838c8ac340ecb0112b3ac472464fa67e87292bdb3dfc9c49128e17"
+checksum = "9391c295d64fc0abb2c556bad848f33cb8296276b1ad2677d1ae1ace4f258f31"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2290,7 +2290,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#b1ccd6349b2a6db2513550caa80557f579fdf451"
+source = "git+https://github.com/xiph/rav1e#816a7c5509492e58792aec0c5063e630261f51c8"
 dependencies = [
  "bitflags",
  "chrono",
