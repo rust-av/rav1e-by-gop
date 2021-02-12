@@ -426,9 +426,9 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f26ecb66b4bdca6c1409b40fb255eefc2bd4f6d135dab3c3124f80ffa2a9661e"
+checksum = "17392a012ea30ef05a610aa97dfb49496e71c9f676b27879922ea5bdf60d9d3f"
 dependencies = [
  "atty",
  "humantime",
@@ -1286,9 +1286,9 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quote"
-version = "1.0.8"
+version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "991431c3519a3f36861882da93630ce66b52918dcf1b8e2fd66b397fc96f28df"
+checksum = "c3d0b9745dc2debf507c8422de05d7226cc1f0644216dfdfead988f9b1ab32a7"
 dependencies = [
  "proc-macro2",
 ]
@@ -1383,7 +1383,7 @@ dependencies = [
 [[package]]
 name = "rav1e"
 version = "0.5.0-alpha"
-source = "git+https://github.com/xiph/rav1e#1be607d4535d8d468790e69a4a418372eed711e3"
+source = "git+https://github.com/xiph/rav1e#a89f7c0432dfaf9b03ecb07fee5935095bd1ef65"
 dependencies = [
  "arbitrary",
  "arg_enum_proc_macro",
@@ -2267,7 +2267,7 @@ dependencies = [
 [[package]]
 name = "v_frame"
 version = "0.2.0"
-source = "git+https://github.com/xiph/rav1e#1be607d4535d8d468790e69a4a418372eed711e3"
+source = "git+https://github.com/xiph/rav1e#a89f7c0432dfaf9b03ecb07fee5935095bd1ef65"
 dependencies = [
  "cfg-if 1.0.0",
  "noop_proc_macro",
@@ -2291,7 +2291,7 @@ checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 [[package]]
 name = "vergen"
 version = "3.0.4"
-source = "git+https://github.com/xiph/rav1e#1be607d4535d8d468790e69a4a418372eed711e3"
+source = "git+https://github.com/xiph/rav1e#a89f7c0432dfaf9b03ecb07fee5935095bd1ef65"
 dependencies = [
  "bitflags",
  "chrono",
