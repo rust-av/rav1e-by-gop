@@ -29,7 +29,7 @@ rav1e-by-gop = { path = "../rav1e-by-gop", default-features = false, features = 
 rayon = "1.5"
 semver = "0.11"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1.0.62"
+serde_json = "1.0.64"
 tokio = { version = "1.2", features = ["rt-multi-thread", "macros", "time"] }
 uuid = { version = "0.8", features = ["v1", "serde"] }
 v_frame = { version = "0.2", features = ["serialize"] }
