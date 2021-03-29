@@ -160,6 +160,9 @@ pub async fn encode_segment<T: Pixel + Default + Serialize + DeserializeOwned>(
         options.tiles,
         video_info,
         pool,
+        options.color_primaries,
+        options.transfer_characteristics,
+        options.matrix_coefficients,
     );
 
     let mut ctx: Context<T> = match cfg.new_context() {
