@@ -119,6 +119,7 @@ pub enum SlotStatus {
     Requested,
 }
 
+#[allow(clippy::clippy::too_many_arguments)]
 pub fn build_config(
     speed: usize,
     qp: usize,
@@ -126,6 +127,9 @@ pub fn build_config(
     tiles: usize,
     video_info: VideoDetails,
     pool: Arc<rayon::ThreadPool>,
+    color_primaries: ColorPrimaries,
+    transfer_characteristics: TransferCharacteristics,
+    matrix_coefficients: MatrixCoefficients,
 ) -> Config {
     Config::new()
         .with_encoder_config(build_encoder_config(
@@ -134,16 +138,23 @@ pub fn build_config(
             max_bitrate,
             tiles,
             video_info,
+            color_primaries,
+            transfer_characteristics,
+            matrix_coefficients,
         ))
         .with_thread_pool(pool)
 }
 
+#[allow(clippy::clippy::too_many_arguments)]
 pub fn build_encoder_config(
     speed: usize,
     qp: usize,
     max_bitrate: Option<i32>,
     tiles: usize,
     video_info: VideoDetails,
+    color_primaries: ColorPrimaries,
+    transfer_characteristics: TransferCharacteristics,
+    matrix_coefficients: MatrixCoefficients,
 ) -> EncoderConfig {
     let mut enc_config = EncoderConfig::with_speed_preset(speed);
     enc_config.width = video_info.width;
@@ -156,6 +167,19 @@ pub fn build_encoder_config(
     enc_config.min_key_frame_interval = 0;
     enc_config.max_key_frame_interval = u16::max_value() as u64;
     enc_config.speed_settings.no_scene_detection = true;
+    enc_config.color_description = if color_primaries == ColorPrimaries::Unspecified
+        && transfer_characteristics == TransferCharacteristics::Unspecified
+        && matrix_coefficients == MatrixCoefficients::Unspecified
+    {
+        // No need to set a color description with all parameters unspecified.
+        None
+    } else {
+        Some(ColorDescription {
+            color_primaries,
+            transfer_characteristics,
+            matrix_coefficients,
+        })
+    };
 
     if let Some(max_bitrate) = max_bitrate {
         enc_config.min_quantizer = qp as u8;

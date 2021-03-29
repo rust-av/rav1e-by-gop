@@ -73,6 +73,9 @@ pub(crate) fn run_first_pass<
     video_info: VideoDetails,
     scope: &Scope,
     num_segments: Arc<AtomicUsize>,
+    #[cfg(feature = "remote")] color_primaries: ColorPrimaries,
+    #[cfg(feature = "remote")] transfer_characteristics: TransferCharacteristics,
+    #[cfg(feature = "remote")] matrix_coefficients: MatrixCoefficients,
 ) {
     let sc_opts = DetectionOptions {
         fast_analysis: opts.speed >= 10,
@@ -113,6 +116,12 @@ pub(crate) fn run_first_pass<
             max_bitrate,
             #[cfg(feature = "remote")]
             tiles,
+            #[cfg(feature = "remote")]
+            color_primaries,
+            #[cfg(feature = "remote")]
+            transfer_characteristics,
+            #[cfg(feature = "remote")]
+            matrix_coefficients,
         );
     });
 
@@ -137,7 +146,7 @@ pub(crate) fn run_first_pass<
             let mut lookahead_queue: BTreeMap<usize, Arc<Frame<T>>> = BTreeMap::new();
 
             let enc_cfg =
-                build_config(opts.speed, opts.qp, opts.max_bitrate, opts.tiles, video_info, rayon_pool);
+                build_config(opts.speed, opts.qp, opts.max_bitrate, opts.tiles, video_info, rayon_pool, opts.color_primaries, opts.transfer_characteristics, opts.matrix_coefficients);
             let ctx: Context<T> = enc_cfg.new_context::<T>().unwrap();
 
             while let Ok(message) = slot_ready_listener.recv() {
@@ -490,6 +499,9 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
     #[cfg(feature = "remote")] qp: usize,
     #[cfg(feature = "remote")] max_bitrate: Option<i32>,
     #[cfg(feature = "remote")] tiles: usize,
+    #[cfg(feature = "remote")] color_primaries: ColorPrimaries,
+    #[cfg(feature = "remote")] transfer_characteristics: TransferCharacteristics,
+    #[cfg(feature = "remote")] matrix_coefficients: MatrixCoefficients,
 ) {
     loop {
         if input_finished_receiver.is_full() {
@@ -527,6 +539,9 @@ fn slot_checker_loop<T: Pixel + DeserializeOwned + Default>(
                                 qp,
                                 max_bitrate,
                                 tiles,
+                                color_primaries,
+                                transfer_characteristics,
+                                matrix_coefficients,
                             },
                             video_info,
                             client_version: semver::Version::parse(env!("CARGO_PKG_VERSION"))

@@ -161,7 +161,31 @@ fn main() -> Result<()> {
         .arg(Arg::with_name("LOCAL_WORKERS")
             .help("Limit the maximum number of local workers that can be used")
             .long("local-workers")
-            .takes_value(true));
+            .takes_value(true))
+        .arg(
+            Arg::with_name("COLOR_PRIMARIES")
+                .help("Color primaries used to describe color parameters")
+                .long("primaries")
+                .possible_values(&ColorPrimaries::variants())
+                .default_value("unspecified")
+                .case_insensitive(true)
+            )
+        .arg(
+            Arg::with_name("TRANSFER_CHARACTERISTICS")
+                .help("Transfer characteristics used to describe color parameters")
+                .long("transfer")
+                .possible_values(&TransferCharacteristics::variants())
+                .default_value("unspecified")
+                .case_insensitive(true)
+        )
+        .arg(
+            Arg::with_name("MATRIX_COEFFICIENTS")
+                .help("Matrix coefficients used to describe color parameters")
+                .long("matrix")
+                .possible_values(&MatrixCoefficients::variants())
+                .default_value("unspecified")
+                .case_insensitive(true)
+        );
     #[cfg(feature = "remote")]
     {
         app = app
@@ -227,6 +251,9 @@ pub struct CliOptions {
     #[cfg(feature = "remote")]
     use_local: bool,
     temp_input: bool,
+    color_primaries: ColorPrimaries,
+    transfer_characteristics: TransferCharacteristics,
+    matrix_coefficients: MatrixCoefficients,
 }
 
 impl From<&ArgMatches<'_>> for CliOptions {
@@ -305,6 +332,21 @@ impl From<&ArgMatches<'_>> for CliOptions {
             #[cfg(feature = "remote")]
             use_local: !matches.is_present("NO_LOCAL"),
             temp_input,
+            color_primaries: matches
+                .value_of("COLOR_PRIMARIES")
+                .unwrap()
+                .parse()
+                .unwrap_or_default(),
+            transfer_characteristics: matches
+                .value_of("TRANSFER_CHARACTERISTICS")
+                .unwrap()
+                .parse()
+                .unwrap_or_default(),
+            matrix_coefficients: matches
+                .value_of("MATRIX_COEFFICIENTS")
+                .unwrap()
+                .parse()
+                .unwrap_or_default(),
         }
     }
 }
@@ -316,6 +358,9 @@ impl From<&CliOptions> for EncodeOptions {
             qp: other.qp,
             max_bitrate: other.max_bitrate,
             tiles: other.tiles,
+            color_primaries: other.color_primaries,
+            transfer_characteristics: other.transfer_characteristics,
+            matrix_coefficients: other.matrix_coefficients,
         }
     }
 }

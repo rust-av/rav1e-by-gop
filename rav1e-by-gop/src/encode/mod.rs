@@ -25,6 +25,9 @@ pub struct EncodeOptions {
     pub qp: usize,
     pub max_bitrate: Option<i32>,
     pub tiles: usize,
+    pub color_primaries: ColorPrimaries,
+    pub transfer_characteristics: TransferCharacteristics,
+    pub matrix_coefficients: MatrixCoefficients,
 }
 
 pub fn encode_segment(
@@ -117,6 +120,9 @@ fn do_encode<T: Pixel + DeserializeOwned>(
         opts.tiles,
         video_info,
         pool,
+        opts.color_primaries,
+        opts.transfer_characteristics,
+        opts.matrix_coefficients,
     );
 
     let mut ctx: Context<T> = cfg.new_context()?;

@@ -255,6 +255,12 @@ pub fn perform_encode_inner<
     let rayon_handle = rayon_pool.clone();
     let num_segments_handle = num_segments.clone();
     s.spawn(move |s| {
+        #[cfg(feature = "remote")]
+        let color_primaries = opts_ref.color_primaries;
+        #[cfg(feature = "remote")]
+        let transfer_characteristics = opts_ref.transfer_characteristics;
+        #[cfg(feature = "remote")]
+        let matrix_coefficients = opts_ref.matrix_coefficients;
         run_first_pass::<T, R>(
             dec,
             opts_ref,
@@ -276,6 +282,12 @@ pub fn perform_encode_inner<
             video_info,
             s,
             num_segments_handle,
+            #[cfg(feature = "remote")]
+            color_primaries,
+            #[cfg(feature = "remote")]
+            transfer_characteristics,
+            #[cfg(feature = "remote")]
+            matrix_coefficients,
         );
     });
 
