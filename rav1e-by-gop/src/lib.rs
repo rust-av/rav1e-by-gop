@@ -6,20 +6,19 @@ pub mod muxer;
 #[cfg(feature = "remote")]
 pub mod remote;
 
-pub use self::compress::*;
-pub use self::encode::*;
-pub use self::muxer::*;
-#[cfg(feature = "remote")]
-pub use self::remote::*;
+use std::{path::PathBuf, sync::Arc};
+
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::sync::Arc;
 #[cfg(feature = "remote")]
 use url::Url;
 #[cfg(feature = "remote")]
 use uuid::Uuid;
+
+#[cfg(feature = "remote")]
+pub use self::remote::*;
+pub use self::{compress::*, encode::*, muxer::*};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VideoDetails {

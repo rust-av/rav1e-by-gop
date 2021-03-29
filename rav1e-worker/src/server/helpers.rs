@@ -1,11 +1,17 @@
-use crate::server::HASHED_SERVER_PASSWORD;
+use std::convert::Infallible;
+
 use bcrypt::verify;
 use serde::de::DeserializeOwned;
-use std::convert::Infallible;
-use warp::http::StatusCode;
-use warp::reject::{MissingHeader, Reject};
-use warp::reply::{Json, WithStatus};
-use warp::{Filter, Rejection, Reply};
+use warp::{
+    http::StatusCode,
+    reject::{MissingHeader, Reject},
+    reply::{Json, WithStatus},
+    Filter,
+    Rejection,
+    Reply,
+};
+
+use crate::server::HASHED_SERVER_PASSWORD;
 
 pub fn json_body<T: DeserializeOwned + Send>(
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Copy {

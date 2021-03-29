@@ -1,8 +1,10 @@
-use crate::{ProgressInfo, SegmentFrameData, SerializableProgressInfo};
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use uuid::Uuid;
+
+use crate::{ProgressInfo, SegmentFrameData, SerializableProgressInfo};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct GetInfoResponse {

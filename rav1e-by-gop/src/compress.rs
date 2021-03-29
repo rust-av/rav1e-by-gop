@@ -2,10 +2,8 @@
 //! The goal here is to reduce memory usage,
 //! because uncompressed Y4M frames are quite large.
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use v_frame::frame::Frame;
-use v_frame::pixel::Pixel;
+use serde::{de::DeserializeOwned, Serialize};
+use v_frame::{frame::Frame, pixel::Pixel};
 
 pub fn compress_frame<T: Pixel + Serialize>(frame: &Frame<T>) -> Vec<u8> {
     let mut compressed_frame = Vec::new();

@@ -8,12 +8,22 @@ mod progress;
 #[cfg(feature = "remote")]
 mod remote;
 
-use self::encode::*;
-use self::progress::*;
+#[cfg(feature = "remote")]
+use std::time::Duration;
+use std::{
+    cmp,
+    collections::BTreeSet,
+    env,
+    fmt,
+    fs::File,
+    io::{stdin, Read, Write},
+    path::PathBuf,
+    str::FromStr,
+};
+
 use anyhow::{ensure, Result};
 use clap::{App, Arg, ArgMatches};
-use console::style;
-use console::Term;
+use console::{style, Term};
 #[cfg(feature = "remote")]
 use lazy_static::lazy_static;
 use log::info;
@@ -21,17 +31,9 @@ use rav1e::prelude::*;
 use rav1e_by_gop::*;
 #[cfg(feature = "remote")]
 use serde::Deserialize;
-use std::cmp;
-use std::collections::BTreeSet;
-use std::fs::File;
-use std::io::Write;
-use std::io::{stdin, Read};
-use std::path::PathBuf;
-use std::str::FromStr;
-#[cfg(feature = "remote")]
-use std::time::Duration;
-use std::{env, fmt};
 use systemstat::{ByteSize, Platform, System};
+
+use self::{encode::*, progress::*};
 
 #[cfg(all(target_arch = "x86_64", target_os = "linux"))]
 #[global_allocator]
@@ -88,7 +90,13 @@ fn main() -> Result<()> {
                 .long("quantizer")
                 .takes_value(true),
         )
-        .arg(Arg::with_name("MAX_BITRATE").help("Max local bitrate (kbps)").long("max-bitrate").alias("vbv-maxrate").takes_value(true))
+        .arg(
+            Arg::with_name("MAX_BITRATE")
+                .help("Max local bitrate (kbps)")
+                .long("max-bitrate")
+                .alias("vbv-maxrate")
+                .takes_value(true),
+        )
         .arg(
             Arg::with_name("MIN_KEYINT")
                 .help("Minimum distance between two keyframes")
@@ -144,39 +152,52 @@ fn main() -> Result<()> {
                 .long("verbose")
                 .short("v"),
         )
-        .arg(Arg::with_name("NO_PROGRESS")
-            .help("Hide the progress bars. Mostly useful for debugging. Automatically set if not running from a TTY.")
-            .long("no-progress")
-            .hidden(true)
+        .arg(
+            Arg::with_name("NO_PROGRESS")
+                .help(
+                    "Hide the progress bars. Mostly useful for debugging. Automatically set if \
+                     not running from a TTY.",
+                )
+                .long("no-progress")
+                .hidden(true),
         )
-        .arg(Arg::with_name("TILES")
-            .help("Sets the number of tiles to use")
-            .long("tiles")
-            .short("t")
-            .default_value("1")
+        .arg(
+            Arg::with_name("TILES")
+                .help("Sets the number of tiles to use")
+                .long("tiles")
+                .short("t")
+                .default_value("1"),
         )
-        .arg(Arg::with_name("INPUT_TEMP_FILES")
-            .help("Write y4m input segments to temporary files instead of keeping them in memory. Reduces memory usage but increases disk usage. Should enable more segments to run simultaneously.")
-            .long("tmp-input"))
-        .arg(Arg::with_name("LOCAL_WORKERS")
-            .help("Limit the maximum number of local workers that can be used")
-            .long("local-workers")
-            .takes_value(true))
+        .arg(
+            Arg::with_name("INPUT_TEMP_FILES")
+                .help(
+                    "Write y4m input segments to temporary files instead of keeping them in \
+                     memory. Reduces memory usage but increases disk usage. Should enable more \
+                     segments to run simultaneously.",
+                )
+                .long("tmp-input"),
+        )
+        .arg(
+            Arg::with_name("LOCAL_WORKERS")
+                .help("Limit the maximum number of local workers that can be used")
+                .long("local-workers")
+                .takes_value(true),
+        )
         .arg(
             Arg::with_name("COLOR_PRIMARIES")
                 .help("Color primaries used to describe color parameters")
                 .long("primaries")
                 .possible_values(&ColorPrimaries::variants())
                 .default_value("unspecified")
-                .case_insensitive(true)
-            )
+                .case_insensitive(true),
+        )
         .arg(
             Arg::with_name("TRANSFER_CHARACTERISTICS")
                 .help("Transfer characteristics used to describe color parameters")
                 .long("transfer")
                 .possible_values(&TransferCharacteristics::variants())
                 .default_value("unspecified")
-                .case_insensitive(true)
+                .case_insensitive(true),
         )
         .arg(
             Arg::with_name("MATRIX_COEFFICIENTS")
@@ -184,7 +205,7 @@ fn main() -> Result<()> {
                 .long("matrix")
                 .possible_values(&MatrixCoefficients::variants())
                 .default_value("unspecified")
-                .case_insensitive(true)
+                .case_insensitive(true),
         );
     #[cfg(feature = "remote")]
     {

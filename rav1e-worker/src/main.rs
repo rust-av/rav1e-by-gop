@@ -1,3 +1,5 @@
+use std::{collections::BTreeMap, env, net::SocketAddrV4, path::PathBuf, time::Duration};
+
 use clap::{App, Arg};
 use lazy_static::lazy_static;
 use log::{debug, log_enabled};
@@ -5,14 +7,8 @@ use parking_lot::RwLock;
 use rand::Rng;
 use rav1e_by_gop::{EncodeOptions, EncodeState, VideoDetails};
 use server::*;
-use std::collections::BTreeMap;
-use std::env;
-use std::net::SocketAddrV4;
-use std::path::PathBuf;
-use std::time::Duration;
 use tokio::time::sleep;
-use uuid::v1::Context;
-use uuid::Uuid;
+use uuid::{v1::Context, Uuid};
 use worker::*;
 
 mod server;
@@ -110,9 +106,12 @@ async fn main() {
         )
         .arg(
             Arg::with_name("TEMP_DIR")
-                .help("Store input segments in temp files in the specified directory; by default stores in memory")
+                .help(
+                    "Store input segments in temp files in the specified directory; by default \
+                     stores in memory",
+                )
                 .long("temp-dir")
-                .takes_value(true)
+                .takes_value(true),
         )
         .get_matches();
 

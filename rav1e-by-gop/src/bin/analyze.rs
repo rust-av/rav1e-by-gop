@@ -1,12 +1,15 @@
-use crate::decode::{get_video_details, process_raw_frame, read_raw_frame, DecodeError};
-use crate::progress::get_segment_input_filename;
-#[cfg(feature = "remote")]
-use crate::progress::get_segment_output_filename;
-#[cfg(feature = "remote")]
-use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
-#[cfg(feature = "remote")]
-use crate::CLIENT;
-use crate::{compress_frame, CliOptions};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs::File,
+    io::{BufWriter, Read, Write},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
+    thread::sleep,
+    time::Duration,
+};
+
 use av_scenechange::{new_detector, DetectionOptions};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossbeam_utils::thread::Scope;
@@ -16,21 +19,24 @@ use log::{debug, error};
 use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet};
-use std::fs::File;
-use std::io::{BufWriter, Read, Write};
-use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
+use serde::{de::DeserializeOwned, Serialize};
 #[cfg(feature = "remote")]
 use systemstat::ByteSize;
-use v_frame::frame::Frame;
-use v_frame::pixel::Pixel;
+use v_frame::{frame::Frame, pixel::Pixel};
 use y4m::Decoder;
+
+#[cfg(feature = "remote")]
+use crate::progress::get_segment_output_filename;
+#[cfg(feature = "remote")]
+use crate::remote::{wait_for_slot_allocation, RemoteWorkerInfo};
+#[cfg(feature = "remote")]
+use crate::CLIENT;
+use crate::{
+    compress_frame,
+    decode::{get_video_details, process_raw_frame, read_raw_frame, DecodeError},
+    progress::get_segment_input_filename,
+    CliOptions,
+};
 
 pub(crate) type AnalyzerSender = Sender<Option<SegmentData>>;
 pub(crate) type AnalyzerReceiver = Receiver<Option<SegmentData>>;
@@ -145,8 +151,17 @@ pub(crate) fn run_first_pass<
             keyframes.insert(0);
             let mut lookahead_queue: BTreeMap<usize, Arc<Frame<T>>> = BTreeMap::new();
 
-            let enc_cfg =
-                build_config(opts.speed, opts.qp, opts.max_bitrate, opts.tiles, video_info, rayon_pool, opts.color_primaries, opts.transfer_characteristics, opts.matrix_coefficients);
+            let enc_cfg = build_config(
+                opts.speed,
+                opts.qp,
+                opts.max_bitrate,
+                opts.tiles,
+                video_info,
+                rayon_pool,
+                opts.color_primaries,
+                opts.transfer_characteristics,
+                opts.matrix_coefficients,
+            );
             let ctx: Context<T> = enc_cfg.new_context::<T>().unwrap();
 
             while let Ok(message) = slot_ready_listener.recv() {
@@ -197,8 +212,10 @@ pub(crate) fn run_first_pass<
                                 let file = File::create(get_segment_input_filename(
                                     match &opts.output {
                                         Output::File(output) => &output,
-                                        Output::Null => unimplemented!("Temp file input not supported with /dev/null output"),
-                                        _ => unreachable!()
+                                        Output::Null => unimplemented!(
+                                            "Temp file input not supported with /dev/null output"
+                                        ),
+                                        _ => unreachable!(),
                                     },
                                     segment_no + 1,
                                 ))
@@ -211,7 +228,8 @@ pub(crate) fn run_first_pass<
                                             bincode::serialize_into(
                                                 &mut writer,
                                                 &process_raw_frame(&frame, &ctx, &cfg),
-                                            ).unwrap();
+                                            )
+                                            .unwrap();
                                             writer.flush().unwrap();
                                             lookahead_frameno += 1;
                                         }
@@ -283,7 +301,7 @@ pub(crate) fn run_first_pass<
                                     if detector.analyze_next_frame(
                                         &frame_set,
                                         analysis_frameno as u64,
-                                        *keyframes.iter().last().unwrap() as u64
+                                        *keyframes.iter().last().unwrap() as u64,
                                     ) {
                                         keyframes.insert(analysis_frameno);
                                     }
@@ -346,8 +364,10 @@ pub(crate) fn run_first_pass<
                             let file = File::create(get_segment_input_filename(
                                 match &opts.output {
                                     Output::File(output) => &output,
-                                    Output::Null => unimplemented!("Temp file input not supported with /dev/null output"),
-                                    _ => unimplemented!()
+                                    Output::Null => unimplemented!(
+                                        "Temp file input not supported with /dev/null output"
+                                    ),
+                                    _ => unimplemented!(),
                                 },
                                 segment_no + 1,
                             ))
@@ -358,8 +378,10 @@ pub(crate) fn run_first_pass<
                                 frame_count += 1;
                                 bincode::serialize_into(
                                     &mut writer,
-                                    &Arc::try_unwrap(lookahead_queue.remove(&frameno).unwrap()).unwrap()
-                                ).unwrap();
+                                    &Arc::try_unwrap(lookahead_queue.remove(&frameno).unwrap())
+                                        .unwrap(),
+                                )
+                                .unwrap();
                                 writer.flush().unwrap();
                             }
                         } else {
@@ -389,8 +411,11 @@ pub(crate) fn run_first_pass<
                                         path: get_segment_input_filename(
                                             match &opts.output {
                                                 Output::File(output) => &output,
-                                                Output::Null => unimplemented!("Temp file input not supported with /dev/null output"),
-                                                _ => unimplemented!()
+                                                Output::Null => unimplemented!(
+                                                    "Temp file input not supported with /dev/null \
+                                                     output"
+                                                ),
+                                                _ => unimplemented!(),
                                             },
                                             segment_no + 1,
                                         ),
@@ -418,24 +443,34 @@ pub(crate) fn run_first_pass<
                                 )))
                                 .unwrap();
                             while CLIENT
-                                .post(&format!("{}{}/{}", &connection.worker_uri, "segment", connection.request_id))
+                                .post(&format!(
+                                    "{}{}/{}",
+                                    &connection.worker_uri, "segment", connection.request_id
+                                ))
                                 .header("X-RAV1E-AUTH", &connection.worker_password)
                                 .json(&PostSegmentMessage {
                                     keyframe_number: start_frameno,
                                     segment_idx: segment_no + 1,
-                                    next_analysis_frame: analysis_frameno - 1
+                                    next_analysis_frame: analysis_frameno - 1,
                                 })
                                 .send()
-                                .and_then(|res| res.error_for_status()).is_err() {
-                                    sleep(Duration::from_secs(5));
+                                .and_then(|res| res.error_for_status())
+                                .is_err()
+                            {
+                                sleep(Duration::from_secs(5));
                             }
                             while CLIENT
-                                .post(&format!("{}{}/{}", &connection.worker_uri, "segment_data", connection.request_id))
+                                .post(&format!(
+                                    "{}{}/{}",
+                                    &connection.worker_uri, "segment_data", connection.request_id
+                                ))
                                 .header("X-RAV1E-AUTH", &connection.worker_password)
                                 .body(bincode::serialize(&processed_frames).unwrap())
                                 .send()
-                                .and_then(|res| res.error_for_status()).is_err() {
-                                    sleep(Duration::from_secs(5));
+                                .and_then(|res| res.error_for_status())
+                                .is_err()
+                            {
+                                sleep(Duration::from_secs(5));
                             }
                             connection
                                 .worker_update_sender
@@ -449,7 +484,7 @@ pub(crate) fn run_first_pass<
                                     Output::File(output) => Output::File(
                                         get_segment_output_filename(&output, segment_no + 1),
                                     ),
-                                    x => x
+                                    x => x,
                                 },
                                 frame_count,
                                 next_analysis_frame: analysis_frameno - 1,

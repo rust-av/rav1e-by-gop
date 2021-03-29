@@ -1,21 +1,27 @@
-use crate::analyze::InputFinishedReceiver;
-#[cfg(feature = "remote")]
-use crate::remote::RemoteWorkerInfo;
+use std::{
+    cmp,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread,
+    time::Duration,
+};
+
 use clap::ArgMatches;
-use console::Term;
-use console::{style, StyledObject};
+use console::{style, StyledObject, Term};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use log::{debug, error, trace};
 #[cfg(feature = "remote")]
 use parking_lot::Mutex;
 use rav1e_by_gop::*;
-use std::fs::File;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use std::{cmp, thread};
+
+use crate::analyze::InputFinishedReceiver;
+#[cfg(feature = "remote")]
+use crate::remote::RemoteWorkerInfo;
 
 pub fn update_progress_file(output: &Output, progress: &ProgressInfo) {
     if let Output::File(output) = output {

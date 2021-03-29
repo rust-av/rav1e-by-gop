@@ -1,14 +1,17 @@
-use super::VideoDetails;
-use crate::analyze::{run_first_pass, AnalyzerChannel, AnalyzerReceiver, InputFinishedChannel};
-#[cfg(feature = "remote")]
-use crate::analyze::{InputFinishedReceiver, RemoteAnalyzerChannel, RemoteAnalyzerReceiver};
-use crate::decode::*;
-use crate::muxer::create_muxer;
-use crate::progress::*;
-#[cfg(feature = "remote")]
-use crate::remote::{discover_remote_worker, remote_encode_segment, RemoteWorkerInfo};
-use crate::CliOptions;
-use crate::{decide_thread_count, Output};
+use std::{
+    collections::BTreeSet,
+    fs::{remove_file, File},
+    io::{BufReader, BufWriter, Read, Write},
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
+    thread,
+    thread::sleep,
+    time::Duration,
+};
+
 #[cfg(feature = "remote")]
 use anyhow::bail;
 use anyhow::Result;
@@ -22,21 +25,24 @@ use log::{debug, info};
 use parking_lot::Mutex;
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::collections::BTreeSet;
-use std::fs::remove_file;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::path::Path;
-use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
-use std::sync::Arc;
-use std::thread;
-use std::thread::sleep;
-use std::time::Duration;
+use serde::{de::DeserializeOwned, Serialize};
 use threadpool::ThreadPool;
 use y4m::Decoder;
+
+use super::VideoDetails;
+#[cfg(feature = "remote")]
+use crate::analyze::{InputFinishedReceiver, RemoteAnalyzerChannel, RemoteAnalyzerReceiver};
+#[cfg(feature = "remote")]
+use crate::remote::{discover_remote_worker, remote_encode_segment, RemoteWorkerInfo};
+use crate::{
+    analyze::{run_first_pass, AnalyzerChannel, AnalyzerReceiver, InputFinishedChannel},
+    decide_thread_count,
+    decode::*,
+    muxer::create_muxer,
+    progress::*,
+    CliOptions,
+    Output,
+};
 
 pub fn perform_encode(
     keyframes: BTreeSet<usize>,
