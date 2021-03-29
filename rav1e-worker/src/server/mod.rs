@@ -1,10 +1,10 @@
-use crate::server::routes::get_routes;
+use std::{env, net::SocketAddrV4, path::PathBuf};
+
 use bcrypt::{hash, DEFAULT_COST};
 use lazy_static::lazy_static;
 use log::info;
-use std::env;
-use std::net::SocketAddrV4;
-use std::path::PathBuf;
+
+use crate::server::routes::get_routes;
 
 mod helpers;
 mod routes;

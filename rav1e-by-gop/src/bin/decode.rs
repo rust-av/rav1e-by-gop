@@ -8,9 +8,10 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
+use std::io::{self, Read};
+
 use rav1e::prelude::*;
 use rav1e_by_gop::VideoDetails;
-use std::io::{self, Read};
 use thiserror::Error;
 use y4m::Decoder;
 

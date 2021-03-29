@@ -9,14 +9,18 @@
 
 mod ivf;
 
-pub use self::ivf::IvfMuxer;
-use crate::Output;
+use std::{
+    ffi::OsStr,
+    fs::File,
+    io,
+    io::{BufWriter, Sink},
+};
+
 use anyhow::Result;
 use rav1e::prelude::*;
-use std::ffi::OsStr;
-use std::fs::File;
-use std::io;
-use std::io::{BufWriter, Sink};
+
+pub use self::ivf::IvfMuxer;
+use crate::Output;
 
 pub trait Muxer {
     fn write_header(

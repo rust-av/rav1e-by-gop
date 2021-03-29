@@ -1,5 +1,6 @@
-use crate::{EncodeOptions, VideoDetails};
 use serde::{Deserialize, Serialize};
+
+use crate::{EncodeOptions, VideoDetails};
 
 /// The client sends this as a text-based "handshake" to discover
 /// the number of worker threads available in the server.

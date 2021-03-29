@@ -8,13 +8,17 @@
 // Media Patent License 1.0 was not distributed with this source code in the
 // PATENTS file, you can obtain it at www.aomedia.org/license/patent.
 
-use super::Muxer;
+use std::{
+    fs::File,
+    io,
+    io::{sink, BufWriter, Sink, Write},
+};
+
 use anyhow::Result;
 use ivf::*;
 use rav1e::prelude::*;
-use std::fs::File;
-use std::io;
-use std::io::{sink, BufWriter, Sink, Write};
+
+use super::Muxer;
 
 pub struct IvfMuxer<W: Write> {
     pub output: W,

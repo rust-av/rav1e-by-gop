@@ -1,26 +1,46 @@
-use crate::server::helpers::{
-    handle_rejection_types, json_body, require_auth, with_state, ClientVersionMismatch,
+use std::{
+    fs::File,
+    io::{BufWriter, Write},
+    path::PathBuf,
+    sync::Arc,
 };
-use crate::server::CLIENT_VERSION_REQUIRED;
-use crate::{try_or_500, EncodeItem, ENCODER_QUEUE, UUID_CONTEXT, UUID_NODE_ID};
+
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
 use chrono::Utc;
 use http::header::{HeaderValue, CONTENT_TYPE};
 use parking_lot::RwLock;
 use rav1e_by_gop::{
-    decompress_frame, EncodeState, GetInfoResponse, GetProgressResponse, PostEnqueueResponse,
-    PostSegmentMessage, SegmentFrameData, SerializableProgressInfo, SlotRequestMessage,
+    decompress_frame,
+    EncodeState,
+    GetInfoResponse,
+    GetProgressResponse,
+    PostEnqueueResponse,
+    PostSegmentMessage,
+    SegmentFrameData,
+    SerializableProgressInfo,
+    SlotRequestMessage,
 };
-use std::fs::File;
-use std::io::{BufWriter, Write};
-use std::path::PathBuf;
-use std::sync::Arc;
-use uuid::v1::Timestamp;
-use uuid::Uuid;
-use warp::http::StatusCode;
-use warp::reply::Response;
-use warp::{Filter, Rejection, Reply};
+use uuid::{v1::Timestamp, Uuid};
+use warp::{http::StatusCode, reply::Response, Filter, Rejection, Reply};
+
+use crate::{
+    server::{
+        helpers::{
+            handle_rejection_types,
+            json_body,
+            require_auth,
+            with_state,
+            ClientVersionMismatch,
+        },
+        CLIENT_VERSION_REQUIRED,
+    },
+    try_or_500,
+    EncodeItem,
+    ENCODER_QUEUE,
+    UUID_CONTEXT,
+    UUID_NODE_ID,
+};
 
 pub fn get_routes(
     temp_dir: Option<PathBuf>,

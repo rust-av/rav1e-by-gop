@@ -1,20 +1,30 @@
-use crate::analyze::SlotReadySender;
-use crate::{WorkerConfig, CLIENT};
+use std::{
+    fs::File,
+    io::{sink, Write},
+    thread::sleep,
+    time::Duration,
+};
+
 use anyhow::Result;
 use crossbeam_channel::unbounded;
 use log::{debug, error};
 use rav1e_by_gop::{
-    ActiveConnection, GetInfoResponse, GetProgressResponse, Output, ProgressStatus, Slot,
-    SlotStatus, WorkerStatusUpdate, WorkerUpdateChannel,
+    ActiveConnection,
+    GetInfoResponse,
+    GetProgressResponse,
+    Output,
+    ProgressStatus,
+    Slot,
+    SlotStatus,
+    WorkerStatusUpdate,
+    WorkerUpdateChannel,
 };
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
-use std::fs::File;
-use std::io::{sink, Write};
-use std::thread::sleep;
-use std::time::Duration;
 use url::Url;
 use v_frame::pixel::Pixel;
+
+use crate::{analyze::SlotReadySender, WorkerConfig, CLIENT};
 
 pub(crate) struct RemoteWorkerInfo {
     pub uri: Url,

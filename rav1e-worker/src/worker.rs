@@ -1,19 +1,15 @@
-use crate::ENCODER_QUEUE;
+use std::{collections::BTreeSet, fs, fs::File, io::BufReader, sync::Arc, time::Duration};
+
 use chrono::Utc;
 use log::{error, info};
 use rav1e::prelude::*;
 use rav1e_by_gop::*;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::collections::BTreeSet;
-use std::fs;
-use std::fs::File;
-use std::io::BufReader;
-use std::sync::Arc;
-use std::time::Duration;
+use serde::{de::DeserializeOwned, Serialize};
 use tokio::time::sleep;
 use uuid::Uuid;
 use v_frame::pixel::Pixel;
+
+use crate::ENCODER_QUEUE;
 
 pub async fn start_workers(worker_threads: usize) {
     info!("Starting {} workers", worker_threads);

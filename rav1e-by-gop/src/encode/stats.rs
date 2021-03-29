@@ -1,13 +1,15 @@
+use std::{
+    collections::BTreeSet,
+    time::{Duration, Instant},
+};
+
 use arrayvec::ArrayVec;
 #[cfg(feature = "binary")]
 use console::style;
 #[cfg(feature = "binary")]
 use log::info;
-use rav1e::data::EncoderStats;
-use rav1e::prelude::*;
+use rav1e::{data::EncoderStats, prelude::*};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::BTreeSet;
-use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct ProgressInfo {

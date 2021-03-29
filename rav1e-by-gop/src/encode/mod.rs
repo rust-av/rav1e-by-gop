@@ -1,23 +1,24 @@
 pub mod stats;
 
-pub use self::stats::*;
+use std::{collections::BTreeSet, fs, fs::File, io::BufReader, path::PathBuf, sync::Arc};
 
-use super::VideoDetails;
-use crate::muxer::create_muxer;
-use crate::{build_config, decompress_frame, Output, SegmentData, SegmentFrameData};
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
 use rav1e::prelude::*;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
-use std::fs;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::PathBuf;
-use std::sync::Arc;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use systemstat::data::ByteSize;
 use threadpool::ThreadPool;
+
+pub use self::stats::*;
+use super::VideoDetails;
+use crate::{
+    build_config,
+    decompress_frame,
+    muxer::create_muxer,
+    Output,
+    SegmentData,
+    SegmentFrameData,
+};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EncodeOptions {
