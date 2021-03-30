@@ -191,7 +191,7 @@ pub(crate) fn run_first_pass<
                                     Ok(_) => {
                                         lookahead_frameno += 1;
                                     }
-                                    Err(DecodeError::EOF) => {
+                                    Err(DecodeError::EndOfFile) => {
                                         break;
                                     }
                                     Err(e) => {
@@ -233,7 +233,7 @@ pub(crate) fn run_first_pass<
                                             writer.flush().unwrap();
                                             lookahead_frameno += 1;
                                         }
-                                        Err(DecodeError::EOF) => {
+                                        Err(DecodeError::EndOfFile) => {
                                             break;
                                         }
                                         Err(e) => {
@@ -251,7 +251,7 @@ pub(crate) fn run_first_pass<
                                             ));
                                             lookahead_frameno += 1;
                                         }
-                                        Err(DecodeError::EOF) => {
+                                        Err(DecodeError::EndOfFile) => {
                                             break;
                                         }
                                         Err(e) => {
@@ -277,7 +277,7 @@ pub(crate) fn run_first_pass<
                                         );
                                         lookahead_frameno += 1;
                                     }
-                                    Err(DecodeError::EOF) => {
+                                    Err(DecodeError::EndOfFile) => {
                                         break;
                                     }
                                     Err(e) => {
