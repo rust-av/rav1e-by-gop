@@ -18,7 +18,7 @@ use y4m::Decoder;
 #[derive(Debug, Error)]
 pub enum DecodeError {
     #[error("Reached end of file")]
-    EOF,
+    EndOfFile,
     #[error("Bad input")]
     BadInput,
     #[error("Unknown colorspace")]
@@ -75,7 +75,7 @@ pub(crate) fn process_raw_frame<T: Pixel>(
 impl From<y4m::Error> for DecodeError {
     fn from(e: y4m::Error) -> DecodeError {
         match e {
-            y4m::Error::EOF => DecodeError::EOF,
+            y4m::Error::EOF => DecodeError::EndOfFile,
             y4m::Error::BadInput => DecodeError::BadInput,
             y4m::Error::UnknownColorspace => DecodeError::UnknownColorspace,
             y4m::Error::ParseError(_) => DecodeError::ParseError,
