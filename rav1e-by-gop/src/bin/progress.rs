@@ -119,8 +119,8 @@ pub(crate) fn watch_progress_receivers(
     }
     let main_pb = segments_pb_holder.add(ProgressBar::new_spinner());
     main_pb.set_style(main_progress_style());
-    main_pb.set_prefix(&overall_prefix().to_string());
-    main_pb.set_message(&overall_progress.progress_overall());
+    main_pb.set_prefix(overall_prefix().to_string());
+    main_pb.set_message(overall_progress.progress_overall());
     if let Some(max_frames) = max_frames {
         main_pb.set_length(max_frames);
     }
@@ -128,7 +128,7 @@ pub(crate) fn watch_progress_receivers(
         .map(|i| {
             let pb = segments_pb_holder.add(ProgressBar::new_spinner());
             pb.set_style(progress_idle_style());
-            pb.set_prefix(&idle_prefix(i >= slots_count).to_string());
+            pb.set_prefix(idle_prefix(i >= slots_count).to_string());
             pb.set_position(0);
             pb.set_length(0);
             pb
@@ -202,7 +202,7 @@ fn update_progress(
                 debug!("Updating progress--new segment starting");
                 pb.set_message("");
                 pb.set_style(progress_active_style());
-                pb.set_prefix(&segment_prefix(progress.segment_idx).to_string());
+                pb.set_prefix(segment_prefix(progress.segment_idx).to_string());
                 pb.reset_elapsed();
                 pb.set_position(0);
                 pb.set_length(progress.total_frames as u64);
@@ -232,7 +232,7 @@ fn update_progress(
 
                 pb.set_message("");
                 pb.set_style(progress_idle_style());
-                pb.set_prefix(&idle_prefix(remote).to_string());
+                pb.set_prefix(idle_prefix(remote).to_string());
                 pb.reset_elapsed();
                 pb.set_position(0);
                 pb.set_length(0);
@@ -240,7 +240,7 @@ fn update_progress(
             } else {
                 trace!("Updating progress--tick");
                 pb.set_position(progress.frame_info.len() as u64);
-                pb.set_message(&progress.progress());
+                pb.set_message(progress.progress());
                 false
             }
         }
@@ -251,19 +251,19 @@ fn update_progress(
         }
         ProgressStatus::Compressing(frames) => {
             debug!("Updating progress--compressing {} frames", frames);
-            pb.set_message(&format!("Compressing {} input frames...", frames));
+            pb.set_message(format!("Compressing {} input frames...", frames));
             false
         }
         ProgressStatus::Sending(size) => {
             debug!("Updating progress--sending {}", size);
-            pb.set_message(&format!("Sending {} input...", size));
+            pb.set_message(format!("Sending {} input...", size));
             false
         }
         ProgressStatus::Idle => {
             debug!("Updating progress--idle");
             pb.set_message("");
             pb.set_style(progress_idle_style());
-            pb.set_prefix(&idle_prefix(remote).to_string());
+            pb.set_prefix(idle_prefix(remote).to_string());
             pb.reset_elapsed();
             pb.set_position(0);
             pb.set_length(0);
@@ -279,7 +279,7 @@ fn update_overall_progress(
 ) {
     update_progress_file(output_file, &overall_progress);
 
-    pb.set_message(&overall_progress.progress_overall());
+    pb.set_message(overall_progress.progress_overall());
 }
 
 fn progress_idle_style() -> ProgressStyle {
