@@ -1,5 +1,9 @@
 # rav1e-by-gop
 
+## DEPRECATION NOTICE
+
+**DEPRECATED**: Please use rav1e with the [channel-api feature](https://github.com/xiph/rav1e#current-unstable-features), or [av1an](https://github.com/master-of-zen/Av1an/).
+
 ## Introduction
 
 `rav1e-by-gop` is a tool to multithread a rav1e encode
